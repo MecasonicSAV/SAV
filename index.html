@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Appel Vidéo avec TogetherJS</title>
+    <style>
+        /* Styles pour la page */
+        #togetherjs-container {
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            z-index: 100;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>Bienvenue sur l'application collaborative</h1>
+    <p>Ceci est un exemple d'intégration de TogetherJS.</p>
+
+    <!-- Zone de contenu sur laquelle les utilisateurs peuvent collaborer -->
+    <div id="collaboration-area">
+        <textarea rows="10" cols="30" placeholder="Écris quelque chose ici..."></textarea>
+    </div>
+
+    <!-- Le bouton de TogetherJS qui permet de rejoindre une session collaborative -->
+    <button id="start-togetherjs">Commencer la session collaborative</button>
+
+    <!-- Inclusion de TogetherJS -->
+    <script src="https://togetherjs.com/togetherjs-min.js"></script>
+    <script>
+        // ID de session unique pour tester
+        const sessionId = 'xybfJMLmRi';  // Utilise un ID fixe ou génère-le dynamiquement
+
+        // Lancer TogetherJS lorsque le bouton est cliqué
+        document.getElementById('start-togetherjs').addEventListener('click', function () {
+            // Fixe l'URL de la session dans TogetherJS
+            TogetherJS.config('partnerUrl', `http://127.0.0.1:5500/index.html#&togetherjs=${sessionId}`);
+            TogetherJS(this);
+        });
+
+        // Gérer les événements de collaboration
+        TogetherJS.config('partnerUrl', `http://127.0.0.1:5500/index.html#&togetherjs=${sessionId}`);
+        TogetherJS.config('frameHeight', 400); // Hauteur de la fenêtre
+
+        TogetherJS.on('ready', function () {
+            console.log("TogetherJS est prêt pour une session collaborative !");
+        });
+
+        TogetherJS.on('sessionConnected', function () {
+            alert('Un participant a rejoint la session!');
+        });
+
+        TogetherJS.on('sessionDisconnected', function () {
+            alert('Un participant a quitté la session!');
+        });
+    </script>
+
+</body>
+</html>
