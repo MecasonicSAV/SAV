@@ -4,22 +4,29 @@
   <meta charset="UTF-8">
   <title>Test TogetherJS</title>
 
-  <!-- Configuration du bon hub -->
+  <!-- ✅ Configuration du bon hub (sans /hub à la fin !) -->
   <script>
-    window.TogetherJSConfig_hubBase = "https://togetherjs-hub.glitch.me/hub";
+    window.TogetherJSConfig_hubBase = "https://togetherjs-hub.glitch.me";
   </script>
 
-  <!-- Inclusion de la bibliothèque -->
+  <!-- ✅ Inclusion de la bibliothèque après la config -->
   <script src="https://togetherjs.com/togetherjs-min.js"></script>
 </head>
 <body>
   <h1>Test TogetherJS</h1>
+
   <textarea placeholder="Tape ici pour tester la synchro…" rows="10" cols="50"></textarea><br>
+
   <button id="start-togetherjs">Démarrer/Arrêter</button>
 
   <script>
+    // ✅ Ajoute une vérification de présence de TogetherJS
     document.getElementById("start-togetherjs").addEventListener("click", function () {
-      TogetherJS(); // ✅ Démarre ou arrête selon le contexte
+      if (typeof TogetherJS !== "undefined") {
+        TogetherJS(this);
+      } else {
+        alert("TogetherJS n'est pas chargé correctement !");
+      }
     });
   </script>
 </body>
