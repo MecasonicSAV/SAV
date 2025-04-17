@@ -41,7 +41,6 @@
     <br>
     <input id="remote-id" placeholder="ID du correspondant">
     <button id="call-btn">Appeler</button>
-    <br>
     <button id="join-btn" style="display:none;">Rejoindre l'appel</button>
     <br>
     <button id="gen-link">🔗 Générer lien invitation</button>
@@ -63,104 +62,107 @@
   <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
   <script>
     document.addEventListener('DOMContentLoaded', () => {
-      const peer         = new Peer();        // signalisation cloud
-      const startVideo   = document.getElementById('start-video');
-      const rotateCam    = document.getElementById('rotate-camera');
-      const shareScreen  = document.getElementById('share-screen');
-      const callBtn      = document.getElementById('call-btn');
-      const joinBtn      = document.getElementById('join-btn');
-      const genLinkBtn   = document.getElementById('gen-link');
-      const inviteLinkIn = document.getElementById('invite-link');
-      const remoteIdIn   = document.getElementById('remote-id');
-      const localV       = document.getElementById('local-video');
-      const remoteV      = document.getElementById('remote-video');
-      const myIdSpan     = document.getElementById('my-id');
-      const localLabel   = document.getElementById('local-label');
-      const remoteLabel  = document.getElementById('remote-label');
-      const statusText   = document.getElementById('status');
-      const msgIn        = document.getElementById('msg-input');
-      const sendBtn      = document.getElementById('send-msg');
-      const messagesDiv  = document.getElementById('messages');
-      const screenshot   = document.getElementById('screenshot');
+      const peer       = new Peer();        // signalisation cloud
+      const startVideo = document.getElementById('start-video');
+      const rotateCam  = document.getElementById('rotate-camera');
+      const shareScreen= document.getElementById('share-screen');
+      const callBtn    = document.getElementById('call-btn');
+      const joinBtn    = document.getElementById('join-btn');
+      const genLinkBtn = document.getElementById('gen-link');
+      const inviteLink = document.getElementById('invite-link');
+      const remoteIdIn = document.getElementById('remote-id');
+      const localV     = document.getElementById('local-video');
+      const remoteV    = document.getElementById('remote-video');
+      const myIdSpan   = document.getElementById('my-id');
+      const localLabel = document.getElementById('local-label');
+      const remoteLabel= document.getElementById('remote-label');
+      const statusText = document.getElementById('status');
+      const msgIn      = document.getElementById('msg-input');
+      const sendBtn    = document.getElementById('send-msg');
+      const messages   = document.getElementById('messages');
+      const screenshot = document.getElementById('screenshot');
 
       let localStream, conn;
       let facingMode = 'user'; // caméra frontale au départ
 
-      // Déterminer rôle : client si host param présent
-      const url = new URL(window.location.href);
-      const hostId = url.searchParams.get('host');
-      const isClient = !!hostId;
+      // Déterminer rôle client vs technicien
+      const url     = new URL(window.location.href);
+      const hostId  = url.searchParams.get('host');
+      const isClient = Boolean(hostId);
 
-      // 1) Afficher ton ID quand prêt
+      // 1) Peer ouvert
       peer.on('open', id => {
         myIdSpan.textContent = id;
-        // Labels
-        localLabel.textContent = isClient ? 'Client' : 'Technicien';
+        localLabel.textContent  = isClient ? 'Client' : 'Technicien';
         remoteLabel.textContent = isClient ? 'Technicien' : 'Client';
-
         if (isClient) {
-          // Client : masquer appel manuel, afficher rejoindre
-          remoteIdIn.value = hostId;
+          // client mode
+          remoteIdIn.value    = hostId;
           remoteIdIn.disabled = true;
-          callBtn.style.display = 'none';
+          callBtn.style.display= 'none';
           genLinkBtn.style.display = 'none';
-          joinBtn.style.display = 'inline-block';
+          joinBtn.style.display= 'inline-block';
         }
       });
 
-      // 2) Réception d'un appel entrant
+      // 2) Appels entrants
       peer.on('call', call => {
+        // réponse automatique avec stream local
         call.answer(localStream);
-        call.on('stream', remoteStream => {
-          remoteV.srcObject = remoteStream;
+        call.on('stream', stream => {
+          remoteV.srcObject = stream;
           statusText.textContent = 'Connecté';
         });
       });
 
-      // 3) Réception d'une connexion data (chat)
+      // 3) Connexion chat entrante
       peer.on('connection', c => {
         conn = c;
-        conn.on('data', data => appendMessage(remoteLabel.textContent, data));
         conn.on('open', () => statusText.textContent = 'Connecté');
+        conn.on('data', data => appendMessage(remoteLabel.textContent, data));
       });
 
       // 4) Activer la caméra
       startVideo.addEventListener('click', async () => {
         localStream && localStream.getTracks().forEach(t => t.stop());
         try {
-          localStream = await navigator.mediaDevices.getUserMedia({ audio: true, video: { facingMode } });
+          localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode }, audio: true });
+          localV.srcObject = localStream;
+          statusText.textContent = 'Caméra activée';
         } catch(err) {
-          return alert('Erreur accès caméra: ' + err.message);
+          alert('Erreur accès caméra: ' + err.message);
         }
-        localV.srcObject = localStream;
-        statusText.textContent = 'Caméra activée';
       });
 
-      // 5) Inverser la caméra
+      // 5) Inverser caméra
       rotateCam.addEventListener('click', () => {
-        facingMode = facingMode === 'user' ? 'environment' : 'user';
+        facingMode = (facingMode === 'user' ? 'environment' : 'user');
         startVideo.click();
       });
 
-      // 6) Partager l'écran
+      // 6) Partage d'écran
       shareScreen.addEventListener('click', async () => {
         try {
-          const screenStream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+          const screen = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
           localStream && localStream.getTracks().forEach(t => t.stop());
-          localStream = screenStream;
-          localV.srcObject = screenStream;
+          localStream = screen;
+          localV.srcObject = screen;
           statusText.textContent = 'Partage d’écran actif';
         } catch(err) {
           alert('Erreur partage d’écran: ' + err.message);
         }
       });
 
-      // 7) Appeler (technicien) ou rejoindre (client)
-      callBtn.addEventListener('click', () => initCall(remoteIdIn.value.trim()));
-      joinBtn.addEventListener('click', () => initCall(hostId));
+      // 7) Initialiser appel
+      callBtn.addEventListener('click', () => initCall(remoteIdIn.value));
+      joinBtn.addEventListener('click', async () => {
+        // demander caméra si non activée
+        if (!localStream) await startVideo.click();
+        initCall(hostId);
+      });
 
-      function initCall(rid) {
-        if (!rid || !localStream) return alert('Caméra active ? ID valide ?');
+      async function initCall(rid) {
+        if (!rid || !localStream) return alert('Caméra active ? ID valide ?');
         const call = peer.call(rid, localStream);
         call.on('stream', stream => {
           remoteV.srcObject = stream;
@@ -171,7 +173,7 @@
         conn.on('data', data => appendMessage(remoteLabel.textContent, data));
       }
 
-      // 8) Envoyer un message chat
+      // 8) Envoi chat
       sendBtn.addEventListener('click', () => {
         const text = msgIn.value.trim();
         if (conn && conn.open && text) {
@@ -184,22 +186,22 @@
       function appendMessage(prefix, txt) {
         const el = document.createElement('div');
         el.textContent = `${prefix} : ${txt}`;
-        messagesDiv.appendChild(el);
-        messagesDiv.scrollTop = messagesDiv.scrollHeight;
+        messages.appendChild(el);
+        messages.scrollTop = messages.scrollHeight;
       }
 
-      // 9) Générer un lien d’invitation
+      // 9) Générer lien
       genLinkBtn.addEventListener('click', () => {
         const base = window.location.origin + window.location.pathname;
         const link = `${base}?host=${myIdSpan.textContent}`;
-        inviteLinkIn.value = link;
-        inviteLinkIn.style.display = 'block';
-        inviteLinkIn.select();
+        inviteLink.value = link;
+        inviteLink.style.display = 'block';
+        inviteLink.select();
         document.execCommand('copy');
-        alert('Lien copié dans le presse‑papier !');
+        alert('Lien d’invitation copié !');
       });
 
-      // 10) Capture d’écran
+      // 10) Screenshot
       screenshot.addEventListener('click', async () => {
         const canvas = await html2canvas(document.body);
         const a = document.createElement('a');
