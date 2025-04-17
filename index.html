@@ -2,37 +2,25 @@
 <html lang="fr">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>TogetherJS Fonctionnel</title>
-  <style>
-    body { font-family: sans-serif; padding: 20px; }
-    textarea { width: 100%; max-width: 500px; height: 200px; }
-    button { margin-top: 1em; padding: 0.5em 1em; font-size: 1rem; }
-  </style>
+  <title>Test TogetherJS</title>
 
-  <!-- 1) CONFIGURATION DU HUB (AVANT LE SCRIPT) -->
+  <!-- Configuration du bon hub -->
   <script>
-    // Hub de secours public
-    window.TogetherJSConfig_hubBase = "https://cpsx-hub.herokuapp.com/hub";
+    window.TogetherJSConfig_hubBase = "https://togetherjs-hub.glitch.me/hub";
   </script>
-  <!-- 2) INCLUSION DU SCRIPT TOGETHERJS -->
+
+  <!-- Inclusion de la bibliothèque -->
   <script src="https://togetherjs.com/togetherjs-min.js"></script>
 </head>
 <body>
-
   <h1>Test TogetherJS</h1>
-  <textarea placeholder="Tapez ici…"></textarea><br>
-  <button id="start">Démarrer/Arrêter la session</button>
+  <textarea placeholder="Tape ici pour tester la synchro…" rows="10" cols="50"></textarea><br>
+  <button id="start-togetherjs">Démarrer/Arrêter</button>
 
   <script>
-    // 3) DÉMARRAGE/ARRÊT SIMPLE
-    document.getElementById('start').addEventListener('click', TogetherJS);
-
-    // Quelques logs/alertes pour vous repérer
-    TogetherJS.on('ready',           () => console.log("TogetherJS prêt"));
-    TogetherJS.on('sessionConnected',() => alert("Un participant est arrivé !"));
-    TogetherJS.on('sessionDisconnected',() => alert("Quelqu’un est parti."));
-    TogetherJS.on('error', err => console.error("TogetherJS error:", err));
+    document.getElementById("start-togetherjs").addEventListener("click", function () {
+      TogetherJS(); // ✅ Démarre ou arrête selon le contexte
+    });
   </script>
 </body>
 </html>
