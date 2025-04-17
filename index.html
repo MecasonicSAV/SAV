@@ -1,33 +1,65 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
-  <title>Test TogetherJS</title>
-
-  <!-- ✅ Configuration du bon hub (sans /hub à la fin !) -->
-  <script>
-    window.TogetherJSConfig_hubBase = "https://togetherjs-hub.glitch.me";
-  </script>
-
-  <!-- ✅ Inclusion de la bibliothèque après la config -->
-  <script src="https://togetherjs.com/togetherjs-min.js"></script>
+  <meta charset="UTF-8" />
+  <title>Support technique</title>
+  <style>
+    body { font-family: sans-serif; display: flex; gap: 20px; padding: 20px; }
+    iframe { flex: 2; border: none; height: 600px; }
+    #side { flex: 1; display: flex; flex-direction: column; gap: 10px; }
+    #chat { flex: 1; border: 1px solid #ccc; padding: 10px; overflow-y: auto; }
+    #chat input { width: 100%; padding: 5px; }
+  </style>
 </head>
 <body>
-  <h1>Test TogetherJS</h1>
 
-  <textarea placeholder="Tape ici pour tester la synchro…" rows="10" cols="50"></textarea><br>
+  <!-- Jitsi Meet intégré -->
+  <iframe id="jitsi-frame"
+    src="https://meet.jit.si/SupportTech_Mecasonic"
+    allow="camera; microphone; fullscreen; display-capture"
+    width="100%">
+  </iframe>
 
-  <button id="start-togetherjs">Démarrer/Arrêter</button>
+  <!-- Zone latérale -->
+  <div id="side">
+    <h2>Chat en direct</h2>
+    <div id="chat">
+      <div id="messages"></div>
+      <input id="chatInput" placeholder="Écris un message..." />
+    </div>
 
+    <button id="screenshotBtn">📸 Prendre un screenshot</button>
+    <a id="downloadLink" style="display:none" download="capture.png">Télécharger l’image</a>
+  </div>
+
+  <!-- Libs -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+
+  <!-- JS -->
   <script>
-    // ✅ Ajoute une vérification de présence de TogetherJS
-    document.getElementById("start-togetherjs").addEventListener("click", function () {
-      if (typeof TogetherJS !== "undefined") {
-        TogetherJS(this);
-      } else {
-        alert("TogetherJS n'est pas chargé correctement !");
+    // Mini chat local (pas en réseau ici)
+    const input = document.getElementById("chatInput");
+    const messages = document.getElementById("messages");
+    input.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") {
+        const msg = document.createElement("div");
+        msg.textContent = "👤 Vous : " + input.value;
+        messages.appendChild(msg);
+        input.value = "";
+        messages.scrollTop = messages.scrollHeight;
       }
     });
+
+    // Screenshot du site
+    document.getElementById("screenshotBtn").onclick = async () => {
+      const canvas = await html2canvas(document.body);
+      const dataUrl = canvas.toDataURL("image/png");
+
+      const link = document.getElementById("downloadLink");
+      link.href = dataUrl;
+      link.style.display = "block";
+      link.click();
+    };
   </script>
 </body>
 </html>
