@@ -8,55 +8,30 @@
     body { font-family: sans-serif; padding: 20px; }
     textarea { width: 100%; max-width: 500px; height: 200px; }
     button { margin-top: 1em; padding: 0.5em 1em; font-size: 1rem; }
-    /* Emplacement du panneau TogetherJS (facultatif) */
-    #togetherjs-container {
-      position: absolute;
-      top: 10px; right: 10px;
-      z-index: 100;
-    }
   </style>
+
+  <!-- 1) CONFIGUREZ ICI VOTRE HUB (heroku ou cpsx-hub) -->
+  <script>
+    window.TogetherJSConfig_hubBase = "https://cpsx-hub.herokuapp.com/";
+  </script>
+  <!-- 2) CHARGEZ TOGETHERJS -->
+  <script src="https://togetherjs.com/togetherjs-min.js"></script>
 </head>
 <body>
 
-  <!-- Container explicite pour le widget TogetherJS -->
-  <div id="togetherjs-container"></div>
-
   <h1>Édition collaborative</h1>
-  <p>Écris dans la zone ci‑dessous et donne le lien à un·e collègue :</p>
-
   <textarea placeholder="Tapez ici…"></textarea>
   <br>
   <button id="start-togetherjs">Démarrer la session collaborative</button>
 
-  <script src="https://togetherjs.com/togetherjs-min.js"></script>
   <script>
-    // (Optionnel) on peut forcer le hub si votre config l’exige
-    TogetherJS.config('hubBase', 'https://togetherjs.com/hub');
+    document.getElementById('start-togetherjs')
+      .addEventListener('click', () => TogetherJS.start());
 
-    const btn = document.getElementById('start-togetherjs');
-    btn.addEventListener('click', function(event) {
-      event.preventDefault();
-      console.log('Bouton cliqué');
-      if (TogetherJS.running) {
-        TogetherJS.stop();
-      } else {
-        TogetherJS.start();
-      }
-    });
-
-    TogetherJS.on('ready', function () {
-      console.log("TogetherJS prêt");
-    });
-    TogetherJS.on('sessionConnected', function () {
-      alert('Un participant est arrivé !');
-    });
-    TogetherJS.on('sessionDisconnected', function () {
-      alert('Un participant est parti.');
-    });
-    TogetherJS.on('error', function (err) {
-      console.error('Erreur TogetherJS:', err);
-    });
+    TogetherJS.on('ready',           () => console.log("TogetherJS prêt"));
+    TogetherJS.on('sessionConnected',() => alert("Un·e participant·e est arrivé·e !"));
+    TogetherJS.on('sessionDisconnected',() => alert("Quelqu’un est parti."));
+    TogetherJS.on('error', err => console.error(err));
   </script>
-
 </body>
 </html>
