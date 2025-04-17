@@ -1,77 +1,136 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-    <meta charset="UTF-8">
-    <title>WebRTC avec PeerJS</title>
-    <style>
-        video {
-            width: 45%;
-            margin: 10px;
-        }
-        button {
-            padding: 10px 20px;
-            background-color: #4CAF50;
-            color: white;
-            border: none;
-            cursor: pointer;
-            font-size: 16px;
-        }
-        button:hover {
-            background-color: #45a049;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <title>Support Vidéo P2P (PeerJS)</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>
+    body { font-family: sans-serif; padding: 20px; text-align: center; }
+    video { width: 45%; margin: 10px; border: 1px solid #333; }
+    #chat { max-width: 400px; margin: 20px auto; text-align: left; }
+    #messages { border:1px solid #ccc; height: 150px; overflow-y: auto; padding: 5px; }
+    #controls > * { margin: 5px; }
+    button { padding: 8px 12px; }
+  </style>
 </head>
 <body>
-    <h1>Appel vidéo WebRTC avec PeerJS</h1>
-    <button id="start-call">Démarrer l'appel vidéo</button>
-    <button id="call-button" style="display:none;">Appeler</button>
-    <input type="text" id="peer-id" placeholder="ID du peer à appeler">
-    <div>
-        <video id="local-video" autoplay muted></video>
-        <video id="remote-video" autoplay></video>
-    </div>
 
-    <script src="https://cdn.peerjs.com/0.3.6/peer.min.js"></script>
-    <script>
-        const startCallButton = document.getElementById('start-call');
-        const callButton = document.getElementById('call-button');
-        const peerIdInput = document.getElementById('peer-id');
-        const localVideo = document.getElementById('local-video');
-        const remoteVideo = document.getElementById('remote-video');
+  <h1>Appel &amp; Chat P2P</h1>
 
-        const peer = new Peer({
-            host: 'peerjs-server.herokuapp.com',
-            secure: true,
-            port: 443,
+  <p>Ton ID : <strong id="my-id">...</strong></p>
+
+  <div id="videos">
+    <video id="local-video" autoplay muted></video>
+    <video id="remote-video" autoplay></video>
+  </div>
+
+  <div id="controls">
+    <button id="start-video">Démarrer la caméra</button>
+    <input id="remote-id" placeholder="ID du correspondant">
+    <button id="call-btn">Appeler</button>
+  </div>
+
+  <div id="chat">
+    <h3>Chat</h3>
+    <div id="messages"></div>
+    <input id="msg-input" placeholder="Écrire un message…">
+    <button id="send-msg">Envoyer</button>
+  </div>
+
+  <button id="screenshot">📸 Prendre une capture</button>
+
+  <!-- PeerJS & html2canvas -->
+  <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      const peer       = new Peer();        // default PeerServer cloud
+      const startVideo = document.getElementById('start-video');
+      const callBtn    = document.getElementById('call-btn');
+      const remoteIdIn = document.getElementById('remote-id');
+      const localV     = document.getElementById('local-video');
+      const remoteV    = document.getElementById('remote-video');
+      const myIdSpan   = document.getElementById('my-id');
+      const msgIn      = document.getElementById('msg-input');
+      const sendBtn    = document.getElementById('send-msg');
+      const messages   = document.getElementById('messages');
+      const screenshot = document.getElementById('screenshot');
+
+      let localStream, conn;
+
+      // 1) Afficher ton ID quand prêt
+      peer.on('open', id => {
+        myIdSpan.textContent = id;
+      });
+
+      // 2) Réception d'un appel entrant
+      peer.on('call', call => {
+        call.answer(localStream);
+        call.on('stream', remoteStream => {
+          remoteV.srcObject = remoteStream;
         });
+      });
 
-        peer.on('open', id => {
-            console.log('Mon ID Peer:', id);
-            startCallButton.style.display = 'none';
-            callButton.style.display = 'block';
+      // 3) Réception d'une connexion data (chat)
+      peer.on('connection', c => {
+        conn = c;
+        conn.on('data', data => {
+          const el = document.createElement('div');
+          el.textContent = '👤 Autre : ' + data;
+          messages.appendChild(el);
+          messages.scrollTop = messages.scrollHeight;
         });
+      });
 
-        peer.on('call', call => {
-            call.answer(localStream);
-            call.on('stream', remoteStream => {
-                remoteVideo.srcObject = remoteStream;
-            });
+      // 4) Démarrer la caméra
+      startVideo.addEventListener('click', async () => {
+        localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
+        localV.srcObject = localStream;
+      });
+
+      // 5) Passer un appel + ouvrir chat
+      callBtn.addEventListener('click', () => {
+        const rid = remoteIdIn.value.trim();
+        if (!rid || !localStream) return alert('Caméra active ? ID valide ?');
+        // appel vidéo
+        const call = peer.call(rid, localStream);
+        call.on('stream', stream => {
+          remoteV.srcObject = stream;
         });
-
-        let localStream;
-
-        startCallButton.addEventListener('click', async () => {
-            localStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: true });
-            localVideo.srcObject = localStream;
+        // connexion chat
+        conn = peer.connect(rid);
+        conn.on('open', () => console.log('Chat ouvert'));
+        conn.on('data', data => {
+          const el = document.createElement('div');
+          el.textContent = '👤 Autre : ' + data;
+          messages.appendChild(el);
+          messages.scrollTop = messages.scrollHeight;
         });
+      });
 
-        callButton.addEventListener('click', () => {
-            const peerId = peerIdInput.value;
-            const call = peer.call(peerId, localStream);
-            call.on('stream', remoteStream => {
-                remoteVideo.srcObject = remoteStream;
-            });
-        });
-    </script>
+      // 6) Envoyer un message chat
+      sendBtn.addEventListener('click', () => {
+        const text = msgIn.value.trim();
+        if (conn && conn.open && text) {
+          conn.send(text);
+          const el = document.createElement('div');
+          el.textContent = '🗨️ Moi : ' + text;
+          messages.appendChild(el);
+          messages.scrollTop = messages.scrollHeight;
+          msgIn.value = '';
+        }
+      });
+
+      // 7) Capture d’écran complète de la page
+      screenshot.addEventListener('click', async () => {
+        const canvas = await html2canvas(document.body);
+        const link = document.createElement('a');
+        link.href = canvas.toDataURL('image/png');
+        link.download = 'screenshot.png';
+        link.click();
+      });
+
+    });
+  </script>
 </body>
 </html>
