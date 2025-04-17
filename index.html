@@ -1,72 +1,62 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Appel Vidéo avec TogetherJS</title>
-    <style>
-        /* Styles pour la page */
-        #togetherjs-container {
-            position: absolute;
-            top: 10px;
-            right: 10px;
-            z-index: 100;
-        }
-
-        body {
-            font-family: Arial, sans-serif;
-            padding: 20px;
-        }
-
-        textarea {
-            width: 100%;
-            max-width: 500px;
-            height: 200px;
-            margin-top: 10px;
-        }
-
-        button {
-            margin-top: 20px;
-            padding: 10px 20px;
-            font-size: 16px;
-            cursor: pointer;
-        }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Collaboratif avec TogetherJS</title>
+  <style>
+    body { font-family: sans-serif; padding: 20px; }
+    textarea { width: 100%; max-width: 500px; height: 200px; }
+    button { margin-top: 1em; padding: 0.5em 1em; font-size: 1rem; }
+    /* Emplacement du panneau TogetherJS (facultatif) */
+    #togetherjs-container {
+      position: absolute;
+      top: 10px; right: 10px;
+      z-index: 100;
+    }
+  </style>
 </head>
 <body>
 
-    <h1>Bienvenue sur l'application collaborative</h1>
-    <p>Ceci est un exemple d'intégration de TogetherJS.</p>
+  <!-- Container explicite pour le widget TogetherJS -->
+  <div id="togetherjs-container"></div>
 
-    <!-- Zone de contenu sur laquelle les utilisateurs peuvent collaborer -->
-    <div id="collaboration-area">
-        <textarea placeholder="Écris quelque chose ici..."></textarea>
-    </div>
+  <h1>Édition collaborative</h1>
+  <p>Écris dans la zone ci‑dessous et donne le lien à un·e collègue :</p>
 
-    <!-- Le bouton de TogetherJS qui permet de rejoindre une session collaborative -->
-    <button id="start-togetherjs">Commencer la session collaborative</button>
+  <textarea placeholder="Tapez ici…"></textarea>
+  <br>
+  <button id="start-togetherjs">Démarrer la session collaborative</button>
 
-    <!-- Inclusion de TogetherJS -->
-    <script src="https://togetherjs.com/togetherjs-min.js"></script>
-    <script>
-        // Lancer TogetherJS lorsque le bouton est cliqué
-        document.getElementById('start-togetherjs').addEventListener('click', function () {
-            TogetherJS(this); // Lance une nouvelle session sur l'URL actuelle
-        });
+  <script src="https://togetherjs.com/togetherjs-min.js"></script>
+  <script>
+    // (Optionnel) on peut forcer le hub si votre config l’exige
+    TogetherJS.config('hubBase', 'https://togetherjs.com/hub');
 
-        // Événements pour informer l'utilisateur
-        TogetherJS.on('ready', function () {
-            console.log("TogetherJS est prêt pour une session collaborative !");
-        });
+    const btn = document.getElementById('start-togetherjs');
+    btn.addEventListener('click', function(event) {
+      event.preventDefault();
+      console.log('Bouton cliqué');
+      if (TogetherJS.running) {
+        TogetherJS.stop();
+      } else {
+        TogetherJS.start();
+      }
+    });
 
-        TogetherJS.on('sessionConnected', function () {
-            alert('Un participant a rejoint la session !');
-        });
-
-        TogetherJS.on('sessionDisconnected', function () {
-            alert('Un participant a quitté la session.');
-        });
-    </script>
+    TogetherJS.on('ready', function () {
+      console.log("TogetherJS prêt");
+    });
+    TogetherJS.on('sessionConnected', function () {
+      alert('Un participant est arrivé !');
+    });
+    TogetherJS.on('sessionDisconnected', function () {
+      alert('Un participant est parti.');
+    });
+    TogetherJS.on('error', function (err) {
+      console.error('Erreur TogetherJS:', err);
+    });
+  </script>
 
 </body>
 </html>
