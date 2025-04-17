@@ -1,65 +1,128 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8" />
-  <title>Support technique</title>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Appel Vidéo avec PeerJS</title>
   <style>
-    body { font-family: sans-serif; display: flex; gap: 20px; padding: 20px; }
-    iframe { flex: 2; border: none; height: 600px; }
-    #side { flex: 1; display: flex; flex-direction: column; gap: 10px; }
-    #chat { flex: 1; border: 1px solid #ccc; padding: 10px; overflow-y: auto; }
-    #chat input { width: 100%; padding: 5px; }
+    #local-video, #remote-video {
+      width: 45%;
+      margin: 10px;
+      border: 1px solid black;
+    }
+    #chat {
+      margin-top: 20px;
+    }
+    #messages {
+      max-height: 200px;
+      overflow-y: auto;
+    }
   </style>
 </head>
 <body>
-
-  <!-- Jitsi Meet intégré -->
-  <iframe id="jitsi-frame"
-    src="https://meet.jit.si/SupportTech_Mecasonic"
-    allow="camera; microphone; fullscreen; display-capture"
-    width="100%">
-  </iframe>
-
-  <!-- Zone latérale -->
-  <div id="side">
-    <h2>Chat en direct</h2>
-    <div id="chat">
-      <div id="messages"></div>
-      <input id="chatInput" placeholder="Écris un message..." />
-    </div>
-
-    <button id="screenshotBtn">📸 Prendre un screenshot</button>
-    <a id="downloadLink" style="display:none" download="capture.png">Télécharger l’image</a>
+  <h1>Appel Vidéo avec PeerJS</h1>
+  
+  <div id="videos">
+    <video id="local-video" autoplay muted></video>
+    <video id="remote-video" autoplay></video>
   </div>
 
-  <!-- Libs -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <div id="chat">
+    <h3>Chat</h3>
+    <div id="messages"></div>
+    <input type="text" id="message-input" placeholder="Tapez un message..." />
+    <button id="send-message">Envoyer</button>
+  </div>
 
-  <!-- JS -->
+  <div>
+    <button id="capture-screen">Capture d'écran</button>
+  </div>
+
+  <script src="https://cdn.peerjs.com/peerjs-1.3.1.min.js"></script>
   <script>
-    // Mini chat local (pas en réseau ici)
-    const input = document.getElementById("chatInput");
-    const messages = document.getElementById("messages");
-    input.addEventListener("keydown", function (e) {
-      if (e.key === "Enter") {
-        const msg = document.createElement("div");
-        msg.textContent = "👤 Vous : " + input.value;
-        messages.appendChild(msg);
-        input.value = "";
-        messages.scrollTop = messages.scrollHeight;
+    const peer = new Peer(); // Créer un pair PeerJS
+    let localStream;
+    let remoteStream;
+    let currentCall;
+
+    // Accéder à la caméra et au micro
+    navigator.mediaDevices.getUserMedia({ video: true, audio: true })
+      .then(stream => {
+        document.getElementById('local-video').srcObject = stream;
+        localStream = stream;
+      })
+      .catch(err => {
+        console.error('Erreur lors de l\'accès à la caméra et au micro:', err);
+      });
+
+    // Lorsqu'un pair se connecte
+    peer.on('open', id => {
+      console.log('Mon ID Peer:', id);
+    });
+
+    // Lorsqu'un appel entrant est reçu
+    peer.on('call', call => {
+      call.answer(localStream); // Répondre à l'appel avec notre propre flux vidéo
+
+      call.on('stream', stream => {
+        document.getElementById('remote-video').srcObject = stream;
+        remoteStream = stream;
+      });
+      currentCall = call;
+    });
+
+    // Établir un appel avec un autre utilisateur
+    function startCall(remotePeerId) {
+      const call = peer.call(remotePeerId, localStream);
+
+      call.on('stream', stream => {
+        document.getElementById('remote-video').srcObject = stream;
+        remoteStream = stream;
+      });
+
+      currentCall = call;
+    }
+
+    // Gérer l'envoi de messages dans le chat
+    document.getElementById('send-message').addEventListener('click', () => {
+      const message = document.getElementById('message-input').value;
+      if (currentCall && message) {
+        currentCall.send(message); // Envoi du message à l'autre utilisateur
+        const messageElement = document.createElement('div');
+        messageElement.textContent = `Vous: ${message}`;
+        document.getElementById('messages').appendChild(messageElement);
+        document.getElementById('message-input').value = ''; // Réinitialiser le champ
       }
     });
 
-    // Screenshot du site
-    document.getElementById("screenshotBtn").onclick = async () => {
-      const canvas = await html2canvas(document.body);
-      const dataUrl = canvas.toDataURL("image/png");
+    // Réception de messages
+    peer.on('data', data => {
+      const messageElement = document.createElement('div');
+      messageElement.textContent = `Autre utilisateur: ${data}`;
+      document.getElementById('messages').appendChild(messageElement);
+    });
 
-      const link = document.getElementById("downloadLink");
-      link.href = dataUrl;
-      link.style.display = "block";
-      link.click();
-    };
+    // Capture d'écran
+    document.getElementById('capture-screen').addEventListener('click', () => {
+      if (localStream) {
+        const canvas = document.createElement('canvas');
+        const context = canvas.getContext('2d');
+        const video = document.getElementById('local-video');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        context.drawImage(video, 0, 0);
+        const screenshot = canvas.toDataURL('image/png');
+        const imgElement = document.createElement('img');
+        imgElement.src = screenshot;
+        document.body.appendChild(imgElement); // Affiche la capture d'écran
+      }
+    });
+
+    // Lorsque l'utilisateur entre l'ID d'un pair et clique pour démarrer un appel
+    const remotePeerId = prompt('Entrez l\'ID du pair avec qui vous voulez communiquer:');
+    if (remotePeerId) {
+      startCall(remotePeerId);
+    }
   </script>
 </body>
 </html>
