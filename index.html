@@ -5,7 +5,7 @@
   <title>MECASONIC Support Vidéo</title>
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <style>
-    body { font-family: sans-serif; padding: 20px; text-align: center; }
+    body { font-family: sans-serif; padding: 20px; text-align: center; margin-top: 60px; }
     .video-wrapper { display: inline-block; margin: 10px; position: relative; }
     .video-wrapper h3 { margin: 5px 0; }
     video { width: 320px; height: auto; border: 1px solid #333; cursor: pointer; }
@@ -16,33 +16,52 @@
     input[readonly], input:disabled { background: #f0f0f0; }
     #status { font-weight: bold; margin-top: 10px; }
     #chat, #screenshot { display: none; }
-    .video-canvas {
-      position: absolute;
-      top: 0;
-      left: 0;
-      pointer-events: none;
-      z-index: 10;
-    }
+
+    #status-bar {
+  background: #333;
+  color: #fff;
+  padding: 10px;
+  position: fixed;
+  top: 0;
+  width: 100%;
+  z-index: 1000;
+  font-size: 14px;
+  display: flex;
+  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+}
+
+    .ping-good { color: lightgreen; }
+    .ping-warn { color: orange; }
+    .ping-bad  { color: red; }
   </style>
 </head>
 <body>
 
-  <h1>Mecasonic Support Vidéo</h1>
+  <div id="status-bar">
+    <div style="width: 100%; text-align: center;">
+      <div id="connection-status">⏳ En attente de connexion...</div>
+      <div>
+        <span id="latency">Ping : ...</span> |
+        <span id="remote-mic-status">Micro distant : inconnu</span>
+      </div>
+    </div>
+  </div>
+  
 
-  <p>Ton ID : <strong id="my-id">...</strong></p>
+  <h1>Mecasonic Support Vidéo</h1>
 
   <div id="videos">
     <div class="video-wrapper">
       <h3 id="local-label">...</h3>
       <video id="local-video" autoplay muted></video>
-      <canvas id="local-canvas" class="video-canvas"></canvas>
-      <button id="fullscreen-local">Plein écran Technicien</button>
+      <button id="fullscreen-local">Plein écran</button>
     </div>
     <div class="video-wrapper">
       <h3 id="remote-label">...</h3>
       <video id="remote-video" autoplay></video>
-      <canvas id="remote-canvas" class="video-canvas"></canvas>
-      <button id="fullscreen-remote">Plein écran Client</button>
+      <button id="fullscreen-remote">Plein écran</button>
     </div>
   </div>
 
@@ -51,15 +70,12 @@
     <button id="share-screen">🔍 Partager écran</button>
     <button id="toggle-audio">🔇 Couper micro</button>
     <br>
-    <input id="remote-id" placeholder="ID du correspondant">
-    <button id="call-btn">Appeler</button>
     <button id="join-btn" style="display:none;">Rejoindre l'appel</button>
     <br>
     <button id="gen-link">🔗 Générer lien invitation</button>
     <input id="invite-link" readonly style="width:100%;display:none">
     <p id="status"></p>
     <button id="screenshot">📸 Prendre capture</button>
-    <button id="toggle-draw">✏️ Mode dessin</button>
   </div>
 
   <div id="chat">
@@ -76,14 +92,11 @@
       const peer = new Peer();
       const rotateCam = document.getElementById('rotate-camera');
       const shareScreen = document.getElementById('share-screen');
-      const callBtn = document.getElementById('call-btn');
       const joinBtn = document.getElementById('join-btn');
       const genLinkBtn = document.getElementById('gen-link');
       const inviteLink = document.getElementById('invite-link');
-      const remoteIdIn = document.getElementById('remote-id');
       const localV = document.getElementById('local-video');
       const remoteV = document.getElementById('remote-video');
-      const myIdSpan = document.getElementById('my-id');
       const localLabel = document.getElementById('local-label');
       const remoteLabel = document.getElementById('remote-label');
       const statusText = document.getElementById('status');
@@ -93,23 +106,22 @@
       const screenshot = document.getElementById('screenshot');
       const toggleAudio = document.getElementById('toggle-audio');
       const chatBox = document.getElementById('chat');
-      const toggleDrawBtn = document.getElementById('toggle-draw');
       const fullscreenLocalBtn = document.getElementById('fullscreen-local');
       const fullscreenRemoteBtn = document.getElementById('fullscreen-remote');
-      const localCanvas = document.getElementById('local-canvas');
-      const remoteCanvas = document.getElementById('remote-canvas');
+      const connectionStatus = document.getElementById('connection-status');
+      const latencyEl = document.getElementById('latency');
+      const remoteMicStatus = document.getElementById('remote-mic-status');
+
       let localStream = null;
       let conn;
       let facingMode = 'user';
       let audioEnabled = true;
-      let drawMode = false;
-      const ctxLocal = localCanvas.getContext('2d');
-      const ctxRemote = remoteCanvas.getContext('2d');
-      let drawTarget = 'local'; // Pour savoir sur quelle vidéo dessiner
 
       const url = new URL(window.location.href);
       const hostId = url.searchParams.get('host');
       const isClient = Boolean(hostId);
+
+      const audioNotif = new Audio("https://www.soundjay.com/buttons/sounds/button-3.mp3");
 
       peer.on('open', async id => {
         myIdSpan.textContent = id;
@@ -118,7 +130,6 @@
         if (isClient) {
           remoteIdIn.value = hostId;
           remoteIdIn.disabled = true;
-          callBtn.style.display = 'none';
           genLinkBtn.style.display = 'none';
           joinBtn.style.display = 'inline-block';
         }
@@ -160,56 +171,94 @@
         }
       });
 
-      callBtn.addEventListener('click', () => initCall(remoteIdIn.value));
       joinBtn.addEventListener('click', () => initCall(hostId));
 
       async function initCall(rid) {
         if (!rid || !peer.open) return alert('ID invalide ou Peer non connecté');
         const call = peer.call(rid, localStream);
-        call.on('stream', stream => {
-          remoteV.srcObject = stream;
-          statusText.textContent = 'Connecté';
-          chatBox.style.display = 'block';
-          screenshot.style.display = 'inline-block';
-        });
+        call.on('stream', stream => handleRemoteStream(stream));
         conn = peer.connect(rid);
         conn.on('open', () => {
-          statusText.textContent = 'Connecté';
           hideConnectionControls();
+          connectionStatus.textContent = '✅ Connecté à ' + remoteLabel.textContent;
+          audioNotif.play();
         });
-        conn.on('data', data => {
-          if (typeof data === 'string') appendMessage(remoteLabel.textContent, data);
-          if (typeof data === 'object' && data.type === 'draw') drawDot(ctxRemote, data.x, data.y);
-        });
+        conn.on('data', data => handleConnData(data));
       }
 
       peer.on('call', call => {
         call.answer(localStream);
-        call.on('stream', stream => {
-          remoteV.srcObject = stream;
-          statusText.textContent = 'Connecté';
-          chatBox.style.display = 'block';
-          screenshot.style.display = 'inline-block';
-          hideConnectionControls();
-        });
+        call.on('stream', stream => handleRemoteStream(stream));
       });
 
       peer.on('connection', c => {
         conn = c;
         conn.on('open', () => {
-          statusText.textContent = 'Connecté';
           hideConnectionControls();
+          connectionStatus.textContent = '✅ Connecté à ' + remoteLabel.textContent;
+          audioNotif.play();
         });
-        conn.on('data', data => {
-          if (typeof data === 'string') appendMessage(remoteLabel.textContent, data);
-          if (typeof data === 'object' && data.type === 'draw') drawDot(ctxRemote, data.x, data.y);
-        });
+        conn.on('data', data => handleConnData(data));
       });
 
+      function handleRemoteStream(stream) {
+        remoteV.srcObject = stream;
+        remoteV.setAttribute("playsinline", true);
+        forceSpeakerOutput(stream);
+        chatBox.style.display = 'block';
+        screenshot.style.display = 'inline-block';
+        connectionStatus.textContent = '✅ Connecté à ' + remoteLabel.textContent;
+        audioNotif.play();
+        monitorRemoteMic(stream);
+      }
+
+      function handleConnData(data) {
+        if (typeof data === 'string') appendMessage(remoteLabel.textContent, data);
+        if (data?.type === 'ping' && conn?.open) {
+          conn.send({ type: 'pong', time: data.time });
+        }
+        if (data?.type === 'pong') {
+          const ping = Date.now() - data.time;
+          updatePingDisplay(ping);
+        }
+      }
+
+      function updatePingDisplay(ping) {
+        latencyEl.textContent = `Ping : ${ping} ms`;
+        latencyEl.className = ping < 100 ? 'ping-good' : ping < 200 ? 'ping-warn' : 'ping-bad';
+      }
+
+      function monitorRemoteMic(stream) {
+        const audioTrack = stream.getAudioTracks()[0];
+        if (!audioTrack) return;
+        remoteMicStatus.textContent = audioTrack.enabled ? "Micro distant : activé" : "Micro distant : coupé";
+        audioTrack.onmute = () => remoteMicStatus.textContent = "Micro distant : coupé";
+        audioTrack.onunmute = () => remoteMicStatus.textContent = "Micro distant : activé";
+      }
+
+      function isMobile() {
+        return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+      }
+
+      function forceSpeakerOutput(stream) {
+        if (!isMobile()) return;
+        try {
+          const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          const source = audioContext.createMediaStreamSource(stream);
+          source.connect(audioContext.destination);
+        } catch (e) {
+          console.warn("Impossible de forcer la sortie haut-parleur :", e);
+        }
+      }
+
+      setInterval(() => {
+        if (conn?.open) {
+          conn.send({ type: 'ping', time: Date.now() });
+        }
+      }, 3000);
+
       function hideConnectionControls() {
-        callBtn.style.display = 'none';
         joinBtn.style.display = 'none';
-        remoteIdIn.style.display = 'none';
         genLinkBtn.style.display = 'none';
         inviteLink.style.display = 'none';
       }
@@ -231,14 +280,14 @@
       }
 
       genLinkBtn.addEventListener('click', () => {
-        const base = window.location.origin + window.location.pathname;
-        const link = `${base}?host=${myIdSpan.textContent}`;
-        inviteLink.value = link;
-        inviteLink.style.display = 'block';
-        inviteLink.select();
-        document.execCommand('copy');
-        alert('Lien d’invitation copié !');
-      });
+  const base = window.location.origin + window.location.pathname;
+  const link = `${base}?host=${peer.id}`;
+  inviteLink.value = link;
+  inviteLink.style.display = 'block';
+  inviteLink.select();
+  document.execCommand('copy');
+  alert('Lien d’invitation copié !');
+});
 
       screenshot.addEventListener('click', async () => {
         const canvas = await html2canvas(document.body);
@@ -248,76 +297,13 @@
         a.click();
       });
 
-      toggleDrawBtn.addEventListener('click', () => {
-        drawMode = !drawMode;
-        toggleDrawBtn.textContent = drawMode ? '🛑 Stop dessin' : '✏️ Mode dessin';
-      });
-
       fullscreenLocalBtn.addEventListener('click', () => {
-        if (localV.requestFullscreen) {
-          localV.requestFullscreen();
-        }
+        if (localV.requestFullscreen) localV.requestFullscreen();
       });
 
       fullscreenRemoteBtn.addEventListener('click', () => {
-        if (remoteV.requestFullscreen) {
-          remoteV.requestFullscreen();
-        }
+        if (remoteV.requestFullscreen) remoteV.requestFullscreen();
       });
-
-      function enableDrawing(canvas, ctx, isLocal) {
-        let drawing = false;
-        const getPos = (e) => {
-          const rect = canvas.getBoundingClientRect();
-          const clientX = e.touches ? e.touches[0].clientX : e.clientX;
-          const clientY = e.touches ? e.touches[0].clientY : e.clientY;
-          return [clientX - rect.left, clientY - rect.top];
-        };
-        const start = e => {
-          if (!drawMode) return;
-          drawing = true;
-          const [x, y] = getPos(e);
-          drawDot(ctx, x, y);
-          if (conn?.open && isLocal) conn.send({ type: 'draw', x, y });
-        };
-        const move = e => {
-          if (!drawing || !drawMode) return;
-          const [x, y] = getPos(e);
-          drawDot(ctx, x, y);
-          if (conn?.open && isLocal) conn.send({ type: 'draw', x, y });
-        };
-        const stop = () => drawing = false;
-        canvas.addEventListener('mousedown', start);
-        canvas.addEventListener('mousemove', move);
-        canvas.addEventListener('mouseup', stop);
-        canvas.addEventListener('mouseout', stop);
-        canvas.addEventListener('touchstart', start);
-        canvas.addEventListener('touchmove', move);
-        canvas.addEventListener('touchend', stop);
-      }
-
-      function drawDot(ctx, x, y) {
-        ctx.fillStyle = 'red';
-        ctx.beginPath();
-        ctx.arc(x, y, 3, 0, 2 * Math.PI);
-        ctx.fill();
-      }
-
-      function resizeCanvases() {
-        const update = (video, canvas) => {
-          const rect = video.getBoundingClientRect();
-          canvas.width = rect.width;
-          canvas.height = rect.height;
-          canvas.style.top = rect.top + 'px';
-          canvas.style.left = rect.left + 'px';
-        };
-        update(localV, localCanvas);
-        update(remoteV, remoteCanvas);
-      }
-      window.addEventListener('resize', resizeCanvases);
-      resizeCanvases();
-      enableDrawing(localCanvas, ctxLocal, true);
-      enableDrawing(remoteCanvas, ctxRemote, false);
     });
   </script>
 </body>
