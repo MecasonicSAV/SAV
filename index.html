@@ -16,29 +16,26 @@
     input[readonly], input:disabled { background: #f0f0f0; }
     #status { font-weight: bold; margin-top: 10px; }
     #chat, #screenshot { display: none; }
-
     #status-bar {
-  background: #333;
-  color: #fff;
-  padding: 10px;
-  position: fixed;
-  top: 0;
-  width: 100%;
-  z-index: 1000;
-  font-size: 14px;
-  display: flex;
-  justify-content: center;
-  flex-direction: column;
-  align-items: center;
-}
-
+      background: #333;
+      color: #fff;
+      padding: 10px;
+      position: fixed;
+      top: 0;
+      width: 100%;
+      z-index: 1000;
+      font-size: 14px;
+      display: flex;
+      justify-content: center;
+      flex-direction: column;
+      align-items: center;
+    }
     .ping-good { color: lightgreen; }
     .ping-warn { color: orange; }
     .ping-bad  { color: red; }
   </style>
 </head>
 <body>
-
   <div id="status-bar">
     <div style="width: 100%; text-align: center;">
       <div id="connection-status">⏳ En attente de connexion...</div>
@@ -48,7 +45,6 @@
       </div>
     </div>
   </div>
-  
 
   <h1>Mecasonic Support Vidéo</h1>
 
@@ -124,12 +120,9 @@
       const audioNotif = new Audio("https://www.soundjay.com/buttons/sounds/button-3.mp3");
 
       peer.on('open', async id => {
-        myIdSpan.textContent = id;
         localLabel.textContent = isClient ? 'Client' : 'Technicien';
         remoteLabel.textContent = isClient ? 'Technicien' : 'Client';
         if (isClient) {
-          remoteIdIn.value = hostId;
-          remoteIdIn.disabled = true;
           genLinkBtn.style.display = 'none';
           joinBtn.style.display = 'inline-block';
         }
@@ -214,9 +207,7 @@
 
       function handleConnData(data) {
         if (typeof data === 'string') appendMessage(remoteLabel.textContent, data);
-        if (data?.type === 'ping' && conn?.open) {
-          conn.send({ type: 'pong', time: data.time });
-        }
+        if (data?.type === 'ping' && conn?.open) conn.send({ type: 'pong', time: data.time });
         if (data?.type === 'pong') {
           const ping = Date.now() - data.time;
           updatePingDisplay(ping);
@@ -280,14 +271,14 @@
       }
 
       genLinkBtn.addEventListener('click', () => {
-  const base = window.location.origin + window.location.pathname;
-  const link = `${base}?host=${peer.id}`;
-  inviteLink.value = link;
-  inviteLink.style.display = 'block';
-  inviteLink.select();
-  document.execCommand('copy');
-  alert('Lien d’invitation copié !');
-});
+        const base = window.location.origin + window.location.pathname;
+        const link = `${base}?host=${peer.id}`;
+        inviteLink.value = link;
+        inviteLink.style.display = 'block';
+        inviteLink.select();
+        document.execCommand('copy');
+        alert('Lien d’invitation copié !');
+      });
 
       screenshot.addEventListener('click', async () => {
         const canvas = await html2canvas(document.body);
