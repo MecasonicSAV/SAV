@@ -51,12 +51,12 @@
   <div id="videos">
     <div class="video-wrapper">
       <h3 id="local-label">...</h3>
-      <video id="local-video" autoplay muted></video>
+      <video id="local-video" autoplay muted playsinline></video>
       <button id="fullscreen-local">Plein écran</button>
     </div>
     <div class="video-wrapper">
       <h3 id="remote-label">...</h3>
-      <video id="remote-video" autoplay></video>
+      <video id="remote-video" autoplay muted playsinline></video>
       <button id="fullscreen-remote">Plein écran</button>
     </div>
   </div>
@@ -228,7 +228,7 @@
       }
 
       function isMobile() {
-        return /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+        return /iPhone|iPad|iPod/i.test(navigator.userAgent);
       }
 
       function forceSpeakerOutput(stream) {
