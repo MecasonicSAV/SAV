@@ -298,5 +298,48 @@
       });
     });
   </script>
+  <script>
+    window.SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+  
+    if (window.SpeechRecognition) {
+      const recognition = new SpeechRecognition();
+      recognition.lang = 'fr-FR'; // Français
+      recognition.continuous = true; // Écoute en boucle
+      recognition.interimResults = false; // Pas de résultat intermédiaire
+  
+      recognition.onresult = function(event) {
+        for (let i = event.resultIndex; i < event.results.length; ++i) {
+          if (event.results[i].isFinal) {
+            const transcript = event.results[i][0].transcript.trim();
+            console.log('Reconnu:', transcript);
+            if (transcript.length > 0) {
+              // Envoie comme message dans le chat
+              if (conn && conn.open) {
+                conn.send(transcript);
+                appendMessage(localLabel.textContent, transcript);
+              }
+            }
+          }
+        }
+      };
+  
+      recognition.onerror = function(event) {
+        console.error('Erreur reconnaissance vocale:', event.error);
+      };
+  
+      recognition.onend = function() {
+        // Si ça s'arrête, on relance automatiquement
+        recognition.start();
+      };
+  
+      // Démarre la reconnaissance quand la page est prête
+      document.addEventListener('DOMContentLoaded', () => {
+        recognition.start();
+      });
+    } else {
+      alert("Votre navigateur ne supporte pas la reconnaissance vocale.");
+    }
+  </script>
+  
 </body>
 </html>
