@@ -7,7 +7,8 @@
   <style>
     body { font-family: sans-serif; padding: 20px; text-align: center; margin-top: 60px; }
     .video-wrapper { display: inline-block; margin: 10px; position: relative; }
-    .video-wrapper h3 { margin: 5px 0; }
+    .video-wrapper h3 { margin: 5px 0; position: relative; }
+    .mic-status { position: absolute; top: 0; right: -25px; font-size: 18px; }
     video { width: 320px; height: auto; border: 1px solid #333; cursor: pointer; }
     #chat { max-width: 400px; margin: 20px auto; text-align: left; }
     #messages { border:1px solid #ccc; height: 150px; overflow-y: auto; padding: 5px; }
@@ -50,12 +51,12 @@
 
   <div id="videos">
     <div class="video-wrapper">
-      <h3 id="local-label">...</h3>
+      <h3 id="local-label">... <span id="local-mic" class="mic-status">🎤</span></h3>
       <video id="local-video" autoplay muted playsinline></video>
       <button id="fullscreen-local">Plein écran</button>
     </div>
     <div class="video-wrapper">
-      <h3 id="remote-label">...</h3>
+      <h3 id="remote-label">... <span id="remote-mic" class="mic-status">🎤</span></h3>
       <video id="remote-video" autoplay playsinline></video>
       <button id="fullscreen-remote">Plein écran</button>
     </div>
@@ -66,7 +67,7 @@
     <button id="share-screen">🔍 Partager écran</button>
     <button id="toggle-audio">🔇 Couper micro</button>
     <br>
-    <button id="join-btn" style="display:none;">Rejoindre l'appel</button>
+    <button id="join-btn" style="display:none;">Join Call</button>
     <br>
     <button id="gen-link">🔗 Générer lien invitation</button>
     <input id="invite-link" readonly style="width:100%;display:none">
@@ -81,264 +82,298 @@
     <button id="send-msg">Envoyer</button>
   </div>
 
-  <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-  <script>
-    document.addEventListener('DOMContentLoaded', async () => {
-      const peer = new Peer();
-      const rotateCam = document.getElementById('rotate-camera');
-      const shareScreen = document.getElementById('share-screen');
-      const joinBtn = document.getElementById('join-btn');
-      const genLinkBtn = document.getElementById('gen-link');
-      const inviteLink = document.getElementById('invite-link');
-      const localV = document.getElementById('local-video');
-      const remoteV = document.getElementById('remote-video');
-      const localLabel = document.getElementById('local-label');
-      const remoteLabel = document.getElementById('remote-label');
-      const statusText = document.getElementById('status');
-      const msgIn = document.getElementById('msg-input');
-      const sendBtn = document.getElementById('send-msg');
-      const messages = document.getElementById('messages');
-      const screenshot = document.getElementById('screenshot');
-      const toggleAudio = document.getElementById('toggle-audio');
-      const chatBox = document.getElementById('chat');
-      const fullscreenLocalBtn = document.getElementById('fullscreen-local');
-      const fullscreenRemoteBtn = document.getElementById('fullscreen-remote');
-      const connectionStatus = document.getElementById('connection-status');
-      const latencyEl = document.getElementById('latency');
-      const remoteMicStatus = document.getElementById('remote-mic-status');
-
-      let localStream = null;
-      let conn;
-      let facingMode = 'user';
-      let audioEnabled = true;
-
-      const url = new URL(window.location.href);
-      const hostId = url.searchParams.get('host');
-      const isClient = Boolean(hostId);
-
-      const audioNotif = new Audio("https://www.soundjay.com/buttons/sounds/button-3.mp3");
-
-      peer.on('open', async id => {
-        localLabel.textContent = isClient ? 'Client' : 'Technicien';
-        remoteLabel.textContent = isClient ? 'Technicien' : 'Client';
-        if (isClient) {
-          genLinkBtn.style.display = 'none';
-          joinBtn.style.display = 'inline-block';
-        }
-        await startMedia();
-      });
-
-      async function startMedia() {
-        try {
-          localStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode }, audio: true });
-          localV.srcObject = localStream;
-          statusText.textContent = 'Caméra/Micro activés';
-        } catch (err) {
-          console.warn('Erreur accès caméra/micro: ' + err.message);
-          statusText.textContent = 'Accès caméra/micro refusé';
-        }
+<script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', async () => {
+    const peer = new Peer();
+    const rotateCam = document.getElementById('rotate-camera');
+    const shareScreen = document.getElementById('share-screen');
+    const joinBtn = document.getElementById('join-btn');
+    const genLinkBtn = document.getElementById('gen-link');
+    const inviteLink = document.getElementById('invite-link');
+    const localV = document.getElementById('local-video');
+    const remoteV = document.getElementById('remote-video');
+    const localLabel = document.getElementById('local-label');
+    const remoteLabel = document.getElementById('remote-label');
+    const localMicIcon = document.getElementById('local-mic');
+    const remoteMicIcon = document.getElementById('remote-mic');
+    const statusText = document.getElementById('status');
+    const msgIn = document.getElementById('msg-input');
+    const sendBtn = document.getElementById('send-msg');
+    const messages = document.getElementById('messages');
+    const screenshot = document.getElementById('screenshot');
+    const toggleAudio = document.getElementById('toggle-audio');
+    const chatBox = document.getElementById('chat');
+    const fullscreenLocalBtn = document.getElementById('fullscreen-local');
+    const fullscreenRemoteBtn = document.getElementById('fullscreen-remote');
+    const connectionStatus = document.getElementById('connection-status');
+    const latencyEl = document.getElementById('latency');
+    const remoteMicStatus = document.getElementById('remote-mic-status');
+  
+    let localStream = null;
+    let conn;
+    let facingMode = 'user';
+    let audioEnabled = true;
+    let call = null;
+  
+    const url = new URL(window.location.href);
+    const hostId = url.searchParams.get('host');
+    const isClient = Boolean(hostId);
+  
+    const audioNotif = new Audio("https://www.soundjay.com/buttons/sounds/button-3.mp3");
+  
+    peer.on('open', async id => {
+      localLabel.childNodes[0].textContent = isClient ? 'Client ' : 'Technicien ';
+      remoteLabel.childNodes[0].textContent = isClient ? 'Technicien ' : 'Client ';
+      if (isClient) {
+        genLinkBtn.style.display = 'none';
+        joinBtn.style.display = 'inline-block';
       }
-
-      toggleAudio.addEventListener('click', () => {
-        if (localStream) {
-          audioEnabled = !audioEnabled;
-          localStream.getAudioTracks().forEach(track => track.enabled = audioEnabled);
-          toggleAudio.textContent = audioEnabled ? '🔇 Couper micro' : '🎤 Activer micro';
+      await startMedia();
+    });
+  
+    async function startMedia() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode }, audio: true });
+        if (localStream && conn?.peerConnection) {
+          await replaceStreamTracks(stream);
         }
-      });
-
-      rotateCam.addEventListener('click', () => {
-        facingMode = (facingMode === 'user' ? 'environment' : 'user');
-        startMedia();
-      });
-
-      shareScreen.addEventListener('click', async () => {
-        try {
-          const screen = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-          localStream = screen;
-          localV.srcObject = screen;
-          statusText.textContent = 'Partage d’écran actif';
-        } catch (err) {
-          alert('Erreur partage d’écran: ' + err.message);
-        }
-      });
-
-      joinBtn.addEventListener('click', () => initCall(hostId));
-
-      async function initCall(rid) {
-        if (!rid || !peer.open) return alert('ID invalide ou Peer non connecté');
-        const call = peer.call(rid, localStream);
-        call.on('stream', stream => handleRemoteStream(stream));
-        conn = peer.connect(rid);
-        conn.on('open', () => {
-          hideConnectionControls();
-          connectionStatus.textContent = '✅ Connecté à ' + remoteLabel.textContent;
-          audioNotif.play();
-        });
-        conn.on('data', data => handleConnData(data));
+        localStream = stream;
+        localV.srcObject = stream;
+        statusText.textContent = 'Caméra/Micro activés';
+        updateLocalMicIcon();
+      } catch (err) {
+        console.warn('Erreur accès caméra/micro: ' + err.message);
+        statusText.textContent = 'Accès caméra/micro refusé';
+        toast('Erreur caméra/micro', 'error');
       }
-
-      peer.on('call', call => {
-        call.answer(localStream);
-        call.on('stream', stream => handleRemoteStream(stream));
+    }
+  
+    async function replaceStreamTracks(newStream) {
+      if (!conn || !conn.peerConnection) return;
+      const senders = conn.peerConnection.getSenders();
+      newStream.getTracks().forEach(track => {
+        const sender = senders.find(s => s.track && s.track.kind === track.kind);
+        if (sender) sender.replaceTrack(track);
       });
-
-      peer.on('connection', c => {
-        conn = c;
-        conn.on('open', () => {
-          hideConnectionControls();
-          connectionStatus.textContent = '✅ Connecté à ' + remoteLabel.textContent;
-          audioNotif.play();
-        });
-        conn.on('data', data => handleConnData(data));
-      });
-
-      function handleRemoteStream(stream) {
-        remoteV.srcObject = stream;
-        remoteV.muted = false; // <- correction ici !
-        remoteV.setAttribute("playsinline", true);
-        forceSpeakerOutput(stream);
-        chatBox.style.display = 'block';
-        screenshot.style.display = 'inline-block';
+    }
+  
+    toggleAudio.addEventListener('click', () => {
+      if (localStream) {
+        audioEnabled = !audioEnabled;
+        localStream.getAudioTracks().forEach(track => track.enabled = audioEnabled);
+        toggleAudio.textContent = audioEnabled ? '🔇 Couper micro' : '🎤 Activer micro';
+        updateLocalMicIcon();
+      }
+    });
+  
+    function updateLocalMicIcon() {
+      localMicIcon.textContent = audioEnabled ? '🎤' : '🔇';
+    }
+  
+    function updateRemoteMicIcon(enabled) {
+      remoteMicIcon.textContent = enabled ? '🎤' : '🔇';
+    }
+  
+    rotateCam.addEventListener('click', async () => {
+      facingMode = (facingMode === 'user' ? 'environment' : 'user');
+      await startMedia();
+    });
+  
+    shareScreen.addEventListener('click', async () => {
+      try {
+        const screen = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+        if (localStream && conn?.peerConnection) {
+          await replaceStreamTracks(screen);
+        }
+        localStream = screen;
+        localV.srcObject = screen;
+        statusText.textContent = 'Partage d’écran actif';
+        updateLocalMicIcon();
+      } catch (err) {
+        toast('Erreur partage d’écran: ' + err.message, 'error');
+      }
+    });
+  
+    joinBtn.addEventListener('click', () => initCall(hostId));
+  
+    async function initCall(rid) {
+      if (!rid || !peer.open) return toast('ID invalide ou Peer non connecté', 'error');
+      call = peer.call(rid, localStream);
+      call.on('stream', stream => handleRemoteStream(stream));
+      conn = peer.connect(rid);
+  
+      let timeout = setTimeout(() => {
+        if (!conn?.open) {
+          toast('⏳ Temps de connexion dépassé. Impossible de rejoindre.', 'error');
+          peer.disconnect();
+          connectionStatus.textContent = "❌ Connexion échouée.";
+        }
+      }, 10000);
+  
+      conn.on('open', () => {
+        clearTimeout(timeout);
+        hideConnectionControls();
         connectionStatus.textContent = '✅ Connecté à ' + remoteLabel.textContent;
         audioNotif.play();
-        monitorRemoteMic(stream);
-      }
-
-      function handleConnData(data) {
-        if (typeof data === 'string') appendMessage(remoteLabel.textContent, data);
-        if (data?.type === 'ping' && conn?.open) conn.send({ type: 'pong', time: data.time });
-        if (data?.type === 'pong') {
-          const ping = Date.now() - data.time;
-          updatePingDisplay(ping);
-        }
-      }
-
-      function updatePingDisplay(ping) {
-        latencyEl.textContent = `Ping : ${ping} ms`;
-        latencyEl.className = ping < 100 ? 'ping-good' : ping < 200 ? 'ping-warn' : 'ping-bad';
-      }
-
-      function monitorRemoteMic(stream) {
-        const audioTrack = stream.getAudioTracks()[0];
-        if (!audioTrack) return;
-        remoteMicStatus.textContent = audioTrack.enabled ? "Micro distant : activé" : "Micro distant : coupé";
-        audioTrack.onmute = () => remoteMicStatus.textContent = "Micro distant : coupé";
-        audioTrack.onunmute = () => remoteMicStatus.textContent = "Micro distant : activé";
-      }
-
-      function isMobile() {
-        return /iPhone|iPad|iPod/i.test(navigator.userAgent);
-      }
-
-      function forceSpeakerOutput(stream) {
-        if (!isMobile()) return;
-        try {
-          const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-          const source = audioContext.createMediaStreamSource(stream);
-          source.connect(audioContext.destination);
-        } catch (e) {
-          console.warn("Impossible de forcer la sortie haut-parleur :", e);
-        }
-      }
-
-      setInterval(() => {
-        if (conn?.open) {
-          conn.send({ type: 'ping', time: Date.now() });
-        }
-      }, 3000);
-
-      function hideConnectionControls() {
-        joinBtn.style.display = 'none';
-        genLinkBtn.style.display = 'none';
-        inviteLink.style.display = 'none';
-      }
-
-      sendBtn.addEventListener('click', () => {
-        const text = msgIn.value.trim();
-        if (conn && conn.open && text) {
-          conn.send(text);
-          appendMessage(localLabel.textContent, text);
-          msgIn.value = '';
-        }
       });
-
-      function appendMessage(prefix, txt) {
-        const el = document.createElement('div');
-        el.textContent = `${prefix} : ${txt}`;
-        messages.appendChild(el);
-        messages.scrollTop = messages.scrollHeight;
-      }
-
-      genLinkBtn.addEventListener('click', () => {
-        const base = window.location.origin + window.location.pathname;
-        const link = `${base}?host=${peer.id}`;
-        inviteLink.value = link;
-        inviteLink.style.display = 'block';
-        inviteLink.select();
-        document.execCommand('copy');
-        alert('Lien d’invitation copié !');
-      });
-
-      screenshot.addEventListener('click', async () => {
-        const canvas = await html2canvas(document.body);
-        const a = document.createElement('a');
-        a.href = canvas.toDataURL('image/png');
-        a.download = 'screenshot.png';
-        a.click();
-      });
-
-      fullscreenLocalBtn.addEventListener('click', () => {
-        if (localV.requestFullscreen) localV.requestFullscreen();
-      });
-
-      fullscreenRemoteBtn.addEventListener('click', () => {
-        if (remoteV.requestFullscreen) remoteV.requestFullscreen();
-      });
-    });
-  </script>
-  <script>
-    window.SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   
-    if (window.SpeechRecognition) {
-      const recognition = new SpeechRecognition();
-      recognition.lang = 'fr-FR'; // Français
-      recognition.continuous = true; // Écoute en boucle
-      recognition.interimResults = false; // Pas de résultat intermédiaire
-  
-      recognition.onresult = function(event) {
-        for (let i = event.resultIndex; i < event.results.length; ++i) {
-          if (event.results[i].isFinal) {
-            const transcript = event.results[i][0].transcript.trim();
-            console.log('Reconnu:', transcript);
-            if (transcript.length > 0) {
-              // Envoie comme message dans le chat
-              if (conn && conn.open) {
-                conn.send(transcript);
-                appendMessage(localLabel.textContent, transcript);
-              }
-            }
-          }
-        }
-      };
-  
-      recognition.onerror = function(event) {
-        console.error('Erreur reconnaissance vocale:', event.error);
-      };
-  
-      recognition.onend = function() {
-        // Si ça s'arrête, on relance automatiquement
-        recognition.start();
-      };
-  
-      // Démarre la reconnaissance quand la page est prête
-      document.addEventListener('DOMContentLoaded', () => {
-        recognition.start();
-      });
-    } else {
-      alert("Votre navigateur ne supporte pas la reconnaissance vocale.");
+      conn.on('data', data => handleConnData(data));
     }
+  
+    peer.on('call', incomingCall => {
+      call = incomingCall;
+      call.answer(localStream);
+      call.on('stream', stream => handleRemoteStream(stream));
+    });
+  
+    peer.on('connection', c => {
+      conn = c;
+      conn.on('open', () => {
+        hideConnectionControls();
+        connectionStatus.textContent = '✅ Connecté à ' + remoteLabel.textContent;
+        audioNotif.play();
+      });
+      conn.on('data', data => handleConnData(data));
+    });
+  
+    peer.on('disconnected', () => {
+      toast('⚡ Connexion perdue. Tentative de reconnexion...', 'warn');
+      reconnect();
+    });
+  
+    function reconnect() {
+      peer.reconnect();
+    }
+  
+    function handleRemoteStream(stream) {
+      remoteV.srcObject = stream;
+      remoteV.muted = false;
+      remoteV.setAttribute("playsinline", true);
+      forceSpeakerOutput(stream);
+      chatBox.style.display = 'block';
+      screenshot.style.display = 'inline-block';
+      connectionStatus.textContent = '✅ Connecté à ' + remoteLabel.textContent;
+      audioNotif.play();
+      monitorRemoteMic(stream);
+    }
+  
+    function handleConnData(data) {
+      if (typeof data === 'string') appendMessage(remoteLabel.textContent, data);
+      if (data?.type === 'ping' && conn?.open) conn.send({ type: 'pong', time: data.time });
+      if (data?.type === 'pong') {
+        const ping = Date.now() - data.time;
+        updatePingDisplay(ping);
+      }
+    }
+  
+    function updatePingDisplay(ping) {
+      latencyEl.textContent = `Ping : ${ping} ms`;
+      latencyEl.className = ping < 100 ? 'ping-good' : ping < 200 ? 'ping-warn' : 'ping-bad';
+    }
+  
+    function monitorRemoteMic(stream) {
+      const audioTrack = stream.getAudioTracks()[0];
+      if (!audioTrack) return;
+      remoteMicStatus.textContent = audioTrack.enabled ? "Micro distant : activé" : "Micro distant : coupé";
+      updateRemoteMicIcon(audioTrack.enabled);
+      audioTrack.onmute = () => {
+        remoteMicStatus.textContent = "Micro distant : coupé";
+        updateRemoteMicIcon(false);
+      };
+      audioTrack.onunmute = () => {
+        remoteMicStatus.textContent = "Micro distant : activé";
+        updateRemoteMicIcon(true);
+      };
+    }
+  
+    function hideConnectionControls() {
+      joinBtn.style.display = 'none';
+      genLinkBtn.style.display = 'none';
+      inviteLink.style.display = 'none';
+    }
+  
+    sendBtn.addEventListener('click', () => {
+      const text = msgIn.value.trim();
+      if (conn && conn.open && text) {
+        conn.send(text);
+        appendMessage(localLabel.textContent, text);
+        msgIn.value = '';
+      }
+    });
+  
+    function appendMessage(prefix, txt) {
+      const el = document.createElement('div');
+      el.textContent = `${prefix} : ${txt}`;
+      messages.appendChild(el);
+      messages.scrollTop = messages.scrollHeight;
+    }
+  
+    genLinkBtn.addEventListener('click', () => {
+      const base = window.location.origin + window.location.pathname;
+      const link = `${base}?host=${peer.id}`;
+      inviteLink.value = link;
+      inviteLink.style.display = 'block';
+      inviteLink.select();
+      document.execCommand('copy');
+      toast('Lien d’invitation copié !', 'info');
+    });
+  
+    screenshot.addEventListener('click', async () => {
+      const canvas = await html2canvas(document.body);
+      const a = document.createElement('a');
+      a.href = canvas.toDataURL('image/png');
+      a.download = 'screenshot.png';
+      a.click();
+    });
+  
+    fullscreenLocalBtn.addEventListener('click', () => {
+      if (localV.requestFullscreen) localV.requestFullscreen();
+    });
+  
+    fullscreenRemoteBtn.addEventListener('click', () => {
+      if (remoteV.requestFullscreen) remoteV.requestFullscreen();
+    });
+  
+    function toast(message, type = 'info') {
+      const toast = document.createElement('div');
+      toast.textContent = message;
+      toast.style.position = 'fixed';
+      toast.style.bottom = '20px';
+      toast.style.left = '50%';
+      toast.style.transform = 'translateX(-50%)';
+      toast.style.padding = '10px 20px';
+      toast.style.borderRadius = '5px';
+      toast.style.color = '#fff';
+      toast.style.background = type === 'error' ? 'red' : type === 'warn' ? 'orange' : 'green';
+      toast.style.zIndex = 9999;
+      document.body.appendChild(toast);
+      setTimeout(() => toast.remove(), 4000);
+    }
+  
+    function isMobile() {
+      return /iPhone|iPad|iPod/i.test(navigator.userAgent);
+    }
+  
+    function forceSpeakerOutput(stream) {
+      if (!isMobile()) return;
+      try {
+        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        const source = audioContext.createMediaStreamSource(stream);
+        source.connect(audioContext.destination);
+      } catch (e) {
+        console.warn("Impossible de forcer la sortie haut-parleur :", e);
+      }
+    }
+  
+    setInterval(() => {
+      if (conn?.open) {
+        conn.send({ type: 'ping', time: Date.now() });
+      }
+    }, 3000);
+  
+  });
   </script>
   
 </body>
