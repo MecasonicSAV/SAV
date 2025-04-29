@@ -223,10 +223,23 @@
     }
   
     peer.on('call', incomingCall => {
-      call = incomingCall;
-      call.answer(localStream);
-      call.on('stream', stream => handleRemoteStream(stream));
+  call = incomingCall;
+  if (!localStream) {
+    startMedia().then(() => {
+      call.answer(localStream, { metadata: { audio: true, video: true } });
     });
+  } else {
+    call.answer(localStream, { metadata: { audio: true, video: true } });
+  }
+  
+  call.on('stream', stream => {
+    handleRemoteStream(stream);
+    if (remoteV.paused) {
+      remoteV.play().catch(e => console.warn('Impossible de jouer la vidéo distante:', e));
+    }
+  });
+});
+
   
     peer.on('connection', c => {
       conn = c;
@@ -248,16 +261,23 @@
     }
   
     function handleRemoteStream(stream) {
-      remoteV.srcObject = stream;
-      remoteV.muted = false;
-      remoteV.setAttribute("playsinline", true);
-      forceSpeakerOutput(stream);
-      chatBox.style.display = 'block';
-      screenshot.style.display = 'inline-block';
-      connectionStatus.textContent = '✅ Connecté à ' + remoteLabel.textContent;
-      audioNotif.play();
-      monitorRemoteMic(stream);
-    }
+  remoteV.srcObject = stream;
+  remoteV.muted = false;
+  remoteV.setAttribute("playsinline", true);
+  forceSpeakerOutput(stream);
+
+  setTimeout(() => {
+    remoteV.play().catch(e => console.warn('Erreur lecture vidéo iPhone:', e));
+  }, 500);
+
+  chatBox.style.display = 'block';
+  screenshot.style.display = 'inline-block';
+  connectionStatus.textContent = '✅ Connecté à ' + remoteLabel.textContent;
+  audioNotif.play();
+  monitorRemoteMic(stream);
+}
+
+
   
     function handleConnData(data) {
       if (typeof data === 'string') appendMessage(remoteLabel.textContent, data);
