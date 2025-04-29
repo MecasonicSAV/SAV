@@ -232,13 +232,9 @@
     call.answer(localStream, { metadata: { audio: true, video: true } });
   }
   
-  call.on('stream', stream => {
-    handleRemoteStream(stream);
-    if (remoteV.paused) {
-      remoteV.play().catch(e => console.warn('Impossible de jouer la vidéo distante:', e));
-    }
-  });
+  call.on('stream', stream => handleRemoteStream(stream));
 });
+
 
   
     peer.on('connection', c => {
@@ -261,14 +257,25 @@
     }
   
     function handleRemoteStream(stream) {
+  if (!remoteV) return;
+  
+  remoteV.pause();
+  
+  remoteV.srcObject = null;
+  
   remoteV.srcObject = stream;
-  remoteV.muted = false;
   remoteV.setAttribute("playsinline", true);
+  remoteV.muted = false;
+  
   forceSpeakerOutput(stream);
 
   setTimeout(() => {
-    remoteV.play().catch(e => console.warn('Erreur lecture vidéo iPhone:', e));
-  }, 500);
+    remoteV.play().then(() => {
+      console.log('Lecture vidéo démarrée');
+    }).catch(err => {
+      console.warn('Erreur lecture vidéo iPhone:', err);
+    });
+  }, 300);
 
   chatBox.style.display = 'block';
   screenshot.style.display = 'inline-block';
@@ -276,6 +283,7 @@
   audioNotif.play();
   monitorRemoteMic(stream);
 }
+
 
 
   
