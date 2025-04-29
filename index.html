@@ -259,22 +259,28 @@
     function handleRemoteStream(stream) {
   if (!remoteV) return;
   
+  // On arrête toute lecture précédente
   remoteV.pause();
-  
   remoteV.srcObject = null;
   
+  // On définit la nouvelle source
   remoteV.srcObject = stream;
   remoteV.setAttribute("playsinline", true);
   remoteV.muted = false;
   
   forceSpeakerOutput(stream);
 
+  // ✅ Petit délai pour laisser Safari configurer la source
   setTimeout(() => {
-    remoteV.play().then(() => {
-      console.log('Lecture vidéo démarrée');
-    }).catch(err => {
-      console.warn('Erreur lecture vidéo iPhone:', err);
-    });
+    if (remoteV.readyState >= 2) { // "Have current data"
+      remoteV.play().then(() => {
+        console.log('Lecture vidéo OK');
+      }).catch(err => {
+        console.warn('Erreur lecture vidéo iPhone:', err);
+      });
+    } else {
+      console.warn('remoteV pas prêt pour lecture');
+    }
   }, 300);
 
   chatBox.style.display = 'block';
@@ -284,9 +290,6 @@
   monitorRemoteMic(stream);
 }
 
-
-
-  
     function handleConnData(data) {
       if (typeof data === 'string') appendMessage(remoteLabel.textContent, data);
       if (data?.type === 'ping' && conn?.open) conn.send({ type: 'pong', time: data.time });
