@@ -81,331 +81,384 @@
     <input id="msg-input" placeholder="Écrire un message…">
     <button id="send-msg">Envoyer</button>
   </div>
-
 <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script>
-  document.addEventListener('DOMContentLoaded', async () => {
-    const peer = new Peer();
-    const rotateCam = document.getElementById('rotate-camera');
-    const shareScreen = document.getElementById('share-screen');
-    const joinBtn = document.getElementById('join-btn');
-    const genLinkBtn = document.getElementById('gen-link');
-    const inviteLink = document.getElementById('invite-link');
-    const localV = document.getElementById('local-video');
-    const remoteV = document.getElementById('remote-video');
-    const localLabel = document.getElementById('local-label');
-    const remoteLabel = document.getElementById('remote-label');
-    const localMicIcon = document.getElementById('local-mic');
-    const remoteMicIcon = document.getElementById('remote-mic');
-    const statusText = document.getElementById('status');
-    const msgIn = document.getElementById('msg-input');
-    const sendBtn = document.getElementById('send-msg');
-    const messages = document.getElementById('messages');
-    const screenshot = document.getElementById('screenshot');
-    const toggleAudio = document.getElementById('toggle-audio');
-    const chatBox = document.getElementById('chat');
-    const fullscreenLocalBtn = document.getElementById('fullscreen-local');
-    const fullscreenRemoteBtn = document.getElementById('fullscreen-remote');
-    const connectionStatus = document.getElementById('connection-status');
-    const latencyEl = document.getElementById('latency');
-    const remoteMicStatus = document.getElementById('remote-mic-status');
-  
-    let localStream = null;
-    let conn;
-    let facingMode = 'user';
-    let audioEnabled = true;
-    let call = null;
-  
-    const url = new URL(window.location.href);
-    const hostId = url.searchParams.get('host');
-    const isClient = Boolean(hostId);
-  
-    const audioNotif = new Audio("https://www.soundjay.com/buttons/sounds/button-3.mp3");
-  
-    peer.on('open', async id => {
-      localLabel.childNodes[0].textContent = isClient ? 'Client ' : 'Technicien ';
-      remoteLabel.childNodes[0].textContent = isClient ? 'Technicien ' : 'Client ';
-      if (isClient) {
-        genLinkBtn.style.display = 'none';
-        joinBtn.style.display = 'inline-block';
-      }
-      await startMedia();
-    });
-  
-    async function startMedia() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode }, audio: true });
-        if (localStream && conn?.peerConnection) {
-          await replaceStreamTracks(stream);
-        }
-        localStream = stream;
-        localV.srcObject = stream;
-        statusText.textContent = 'Caméra/Micro activés';
-        updateLocalMicIcon();
-      } catch (err) {
-        console.warn('Erreur accès caméra/micro: ' + err.message);
-        statusText.textContent = 'Accès caméra/micro refusé';
-        toast('Erreur caméra/micro', 'error');
-      }
-    }
-  
-    async function replaceStreamTracks(newStream) {
-      if (!conn || !conn.peerConnection) return;
-      const senders = conn.peerConnection.getSenders();
-      newStream.getTracks().forEach(track => {
-        const sender = senders.find(s => s.track && s.track.kind === track.kind);
-        if (sender) sender.replaceTrack(track);
-      });
-    }
-  
-    toggleAudio.addEventListener('click', () => {
-      if (localStream) {
-        audioEnabled = !audioEnabled;
-        localStream.getAudioTracks().forEach(track => track.enabled = audioEnabled);
-        toggleAudio.textContent = audioEnabled ? '🔇 Couper micro' : '🎤 Activer micro';
-        updateLocalMicIcon();
-      }
-    });
-  
-    function updateLocalMicIcon() {
-      localMicIcon.textContent = audioEnabled ? '🎤' : '🔇';
-    }
-  
-    function updateRemoteMicIcon(enabled) {
-      remoteMicIcon.textContent = enabled ? '🎤' : '🔇';
-    }
-  
-    rotateCam.addEventListener('click', async () => {
-      facingMode = (facingMode === 'user' ? 'environment' : 'user');
-      await startMedia();
-    });
-  
-    shareScreen.addEventListener('click', async () => {
-      try {
-        const screen = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-        if (localStream && conn?.peerConnection) {
-          await replaceStreamTracks(screen);
-        }
-        localStream = screen;
-        localV.srcObject = screen;
-        statusText.textContent = 'Partage d’écran actif';
-        updateLocalMicIcon();
-      } catch (err) {
-        toast('Erreur partage d’écran: ' + err.message, 'error');
-      }
-    });
-  
-    joinBtn.addEventListener('click', () => initCall(hostId));
-  
-    async function initCall(rid) {
-      if (!rid || !peer.open) return toast('ID invalide ou Peer non connecté', 'error');
-      call = peer.call(rid, localStream);
-      call.on('stream', stream => handleRemoteStream(stream));
-      conn = peer.connect(rid);
-  
-      let timeout = setTimeout(() => {
-        if (!conn?.open) {
-          toast('⏳ Temps de connexion dépassé. Impossible de rejoindre.', 'error');
-          peer.disconnect();
-          connectionStatus.textContent = "❌ Connexion échouée.";
-        }
-      }, 10000);
-  
-      conn.on('open', () => {
-        clearTimeout(timeout);
-        hideConnectionControls();
-        connectionStatus.textContent = '✅ Connecté à ' + remoteLabel.textContent;
-        audioNotif.play();
-      });
-  
-      conn.on('data', data => handleConnData(data));
-    }
-  
-    peer.on('call', incomingCall => {
-  call = incomingCall;
-  if (!localStream) {
-    startMedia().then(() => {
-      call.answer(localStream, { metadata: { audio: true, video: true } });
-    });
-  } else {
-    call.answer(localStream, { metadata: { audio: true, video: true } });
-  }
-  
-  call.on('stream', stream => handleRemoteStream(stream));
-});
-
-
-  
-    peer.on('connection', c => {
-      conn = c;
-      conn.on('open', () => {
-        hideConnectionControls();
-        connectionStatus.textContent = '✅ Connecté à ' + remoteLabel.textContent;
-        audioNotif.play();
-      });
-      conn.on('data', data => handleConnData(data));
-    });
-  
-    peer.on('disconnected', () => {
-      toast('⚡ Connexion perdue. Tentative de reconnexion...', 'warn');
-      reconnect();
-    });
-  
-    function reconnect() {
-      peer.reconnect();
-    }
-  
-    function handleRemoteStream(stream) {
-  if (!remoteV) return;
-  
-  // On arrête toute lecture précédente
-  remoteV.pause();
-  remoteV.srcObject = null;
-  
-  // On définit la nouvelle source
-  remoteV.srcObject = stream;
-  remoteV.setAttribute("playsinline", true);
-  remoteV.muted = false;
-  
-  forceSpeakerOutput(stream);
-
-  // ✅ Petit délai pour laisser Safari configurer la source
-  setTimeout(() => {
-    if (remoteV.readyState >= 2) { // "Have current data"
-      remoteV.play().then(() => {
-        console.log('Lecture vidéo OK');
-      }).catch(err => {
-        console.warn('Erreur lecture vidéo iPhone:', err);
-      });
-    } else {
-      console.warn('remoteV pas prêt pour lecture');
-    }
-  }, 300);
-
-  chatBox.style.display = 'block';
-  screenshot.style.display = 'inline-block';
-  connectionStatus.textContent = '✅ Connecté à ' + remoteLabel.textContent;
-  audioNotif.play();
-  monitorRemoteMic(stream);
-}
-
-    function handleConnData(data) {
-      if (typeof data === 'string') appendMessage(remoteLabel.textContent, data);
-      if (data?.type === 'ping' && conn?.open) conn.send({ type: 'pong', time: data.time });
-      if (data?.type === 'pong') {
-        const ping = Date.now() - data.time;
-        updatePingDisplay(ping);
-      }
-    }
-  
-    function updatePingDisplay(ping) {
-      latencyEl.textContent = `Ping : ${ping} ms`;
-      latencyEl.className = ping < 100 ? 'ping-good' : ping < 200 ? 'ping-warn' : 'ping-bad';
-    }
-  
-    function monitorRemoteMic(stream) {
-      const audioTrack = stream.getAudioTracks()[0];
-      if (!audioTrack) return;
-      remoteMicStatus.textContent = audioTrack.enabled ? "Micro distant : activé" : "Micro distant : coupé";
-      updateRemoteMicIcon(audioTrack.enabled);
-      audioTrack.onmute = () => {
-        remoteMicStatus.textContent = "Micro distant : coupé";
-        updateRemoteMicIcon(false);
-      };
-      audioTrack.onunmute = () => {
-        remoteMicStatus.textContent = "Micro distant : activé";
-        updateRemoteMicIcon(true);
-      };
-    }
-  
-    function hideConnectionControls() {
-      joinBtn.style.display = 'none';
-      genLinkBtn.style.display = 'none';
-      inviteLink.style.display = 'none';
-    }
-  
-    sendBtn.addEventListener('click', () => {
-      const text = msgIn.value.trim();
-      if (conn && conn.open && text) {
-        conn.send(text);
-        appendMessage(localLabel.textContent, text);
-        msgIn.value = '';
-      }
-    });
-  
-    function appendMessage(prefix, txt) {
-      const el = document.createElement('div');
-      el.textContent = `${prefix} : ${txt}`;
-      messages.appendChild(el);
-      messages.scrollTop = messages.scrollHeight;
-    }
-  
-    genLinkBtn.addEventListener('click', () => {
-      const base = window.location.origin + window.location.pathname;
-      const link = `${base}?host=${peer.id}`;
-      inviteLink.value = link;
-      inviteLink.style.display = 'block';
-      inviteLink.select();
-      document.execCommand('copy');
-      toast('Lien d’invitation copié !', 'info');
-    });
-  
-    screenshot.addEventListener('click', async () => {
-      const canvas = await html2canvas(document.body);
-      const a = document.createElement('a');
-      a.href = canvas.toDataURL('image/png');
-      a.download = 'screenshot.png';
-      a.click();
-    });
-  
-    fullscreenLocalBtn.addEventListener('click', () => {
-      if (localV.requestFullscreen) localV.requestFullscreen();
-    });
-  
-    fullscreenRemoteBtn.addEventListener('click', () => {
-      if (remoteV.requestFullscreen) remoteV.requestFullscreen();
-    });
-  
-    function toast(message, type = 'info') {
-      const toast = document.createElement('div');
-      toast.textContent = message;
-      toast.style.position = 'fixed';
-      toast.style.bottom = '20px';
-      toast.style.left = '50%';
-      toast.style.transform = 'translateX(-50%)';
-      toast.style.padding = '10px 20px';
-      toast.style.borderRadius = '5px';
-      toast.style.color = '#fff';
-      toast.style.background = type === 'error' ? 'red' : type === 'warn' ? 'orange' : 'green';
-      toast.style.zIndex = 9999;
-      document.body.appendChild(toast);
-      setTimeout(() => toast.remove(), 4000);
-    }
-  
-    function isMobile() {
-      return /iPhone|iPad|iPod/i.test(navigator.userAgent);
-    }
-  
-    function forceSpeakerOutput(stream) {
-      if (!isMobile()) return;
-      try {
-        const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-        const source = audioContext.createMediaStreamSource(stream);
-        source.connect(audioContext.destination);
-      } catch (e) {
-        console.warn("Impossible de forcer la sortie haut-parleur :", e);
-      }
-    }
-  
-    setInterval(() => {
-      if (conn?.open) {
-        conn.send({ type: 'ping', time: Date.now() });
-      }
-    }, 3000);
-  
+document.addEventListener('DOMContentLoaded', async () => {
+  const peer = new Peer( {
   });
-  </script>
-  
+  const rotateCam   = document.getElementById('rotate-camera');
+  const shareScreen = document.getElementById('share-screen');
+  const joinBtn     = document.getElementById('join-btn');
+  const genLinkBtn  = document.getElementById('gen-link');
+  const inviteLink  = document.getElementById('invite-link');
+  const localV      = document.getElementById('local-video');
+  const remoteV     = document.getElementById('remote-video');
+  const localLabel  = document.getElementById('local-label');
+  const remoteLabel = document.getElementById('remote-label');
+  const localMicIcon  = document.getElementById('local-mic');
+  const remoteMicIcon = document.getElementById('remote-mic');
+  const statusText  = document.getElementById('status');
+  const msgIn       = document.getElementById('msg-input');
+  const sendBtn     = document.getElementById('send-msg');
+  const messages    = document.getElementById('messages');
+  const screenshot  = document.getElementById('screenshot');
+  const toggleAudio = document.getElementById('toggle-audio');
+  const chatBox     = document.getElementById('chat');
+  const fullscreenLocalBtn  = document.getElementById('fullscreen-local');
+  const fullscreenRemoteBtn = document.getElementById('fullscreen-remote');
+  const connectionStatus = document.getElementById('connection-status');
+  const latencyEl        = document.getElementById('latency');
+  const remoteMicStatus  = document.getElementById('remote-mic-status');
+
+  // Bouton pour lever l’autoplay sur iOS
+  let audioUnlockBtn;
+  function ensureAudioUnlockButton() {
+    if (audioUnlockBtn) return;
+    audioUnlockBtn = document.createElement('button');
+    audioUnlockBtn.textContent = "🔊 Activer le son";
+    audioUnlockBtn.style.position = 'fixed';
+    audioUnlockBtn.style.right = '16px';
+    audioUnlockBtn.style.bottom = '16px';
+    audioUnlockBtn.style.zIndex = 9999;
+    audioUnlockBtn.addEventListener('click', () => {
+      remoteV.muted = false;
+      remoteV.play().catch(()=>{});
+      audioUnlockBtn.remove();
+    });
+    document.body.appendChild(audioUnlockBtn);
+  }
+
+  const audioNotif = new Audio("https://www.soundjay.com/buttons/sounds/button-3.mp3");
+
+  // ==== State ====
+  let localStream = null;      // stream “source” (caméra ou écran + micro)
+  let micTrack = null;         // on mémorise la track micro pour la mixer pendant le screen share
+  let facingMode = 'user';
+  let audioEnabled = true;
+  let dataConn = null;         // PeerJS DataConnection (chat/ping)
+  let mediaConn = null;        // PeerJS MediaConnection (appel)
+  let isClient = false;
+
+  // ==== URL role ====
+  const url = new URL(window.location.href);
+  const hostId = url.searchParams.get('host');
+  isClient = Boolean(hostId);
+
+  // ==== Helpers ====
+  const isMobile = () => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+
+  function toast(message, type = 'info') {
+    const el = document.createElement('div');
+    el.textContent = message;
+    el.style.position = 'fixed';
+    el.style.bottom = '20px';
+    el.style.left = '50%';
+    el.style.transform = 'translateX(-50%)';
+    el.style.padding = '10px 20px';
+    el.style.borderRadius = '5px';
+    el.style.color = '#fff';
+    el.style.background = type === 'error' ? 'red' : type === 'warn' ? 'orange' : 'green';
+    el.style.zIndex = 9999;
+    document.body.appendChild(el);
+    setTimeout(() => el.remove(), 3500);
+  }
+
+  function updateLocalMicIcon() {
+    localMicIcon.textContent = audioEnabled ? '🎤' : '🔇';
+  }
+  function updateRemoteMicIcon(enabled) {
+    remoteMicIcon.textContent = enabled ? '🎤' : '🔇';
+  }
+  function setRoleLabels() {
+    // On évite childNodes[0] fragile
+    localLabel.innerHTML  = (isClient ? 'Client '     : 'Technicien ') + `<span id="local-mic" class="mic-status">${audioEnabled?'🎤':'🔇'}</span>`;
+    remoteLabel.innerHTML = (isClient ? 'Technicien ' : 'Client ')     + `<span id="remote-mic" class="mic-status">🎤</span>`;
+  }
+
+  async function stopStream(stream) {
+    if (!stream) return;
+    stream.getTracks().forEach(t => t.stop());
+  }
+
+  async function getUserMediaStream() {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      video: { facingMode },
+      audio: true
+    });
+    // on isole/retient la track micro pour la réutiliser
+    micTrack = stream.getAudioTracks()[0] || null;
+    return stream;
+  }
+
+  async function setLocalStream(stream) {
+    await stopStream(localStream);   // stoppe l’ancien stream proprement
+    localStream = stream;
+    localV.srcObject = stream;
+    localV.muted = true; // éviter écho local
+    updateLocalMicToggle();
+  }
+
+  function updateLocalMicToggle() {
+    if (!micTrack) return;
+    micTrack.enabled = audioEnabled;
+    toggleAudio.textContent = audioEnabled ? '🔇 Couper micro' : '🎤 Activer micro';
+    updateLocalMicIcon();
+  }
+
+  async function replaceOutgoingTrack(kind, newTrack) {
+    if (!mediaConn || !mediaConn.peerConnection) return;
+    const sender = mediaConn.peerConnection.getSenders().find(s => s.track && s.track.kind === kind);
+    if (sender) {
+      await sender.replaceTrack(newTrack);
+    }
+  }
+
+  async function startCamera() {
+    try {
+      const cam = await getUserMediaStream();
+      await setLocalStream(cam);
+      statusText.textContent = 'Caméra/Micro activés';
+      // si déjà en appel, remplace les tracks côté RTCRtpSender
+      if (mediaConn && mediaConn.open) {
+        const v = cam.getVideoTracks()[0];
+        const a = micTrack;
+        if (v) await replaceOutgoingTrack('video', v);
+        if (a) await replaceOutgoingTrack('audio', a);
+      }
+    } catch (e) {
+      console.warn(e);
+      statusText.textContent = 'Accès caméra/micro refusé';
+      toast('Erreur caméra/micro : ' + e.message, 'error');
+    }
+  }
+
+  async function startScreenShare() {
+    try {
+      const display = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
+      // si l’audio d’écran n’est pas dispo, on garde le micro (micTrack)
+      const screenVideo = display.getVideoTracks()[0] || null;
+      const screenAudio = display.getAudioTracks()[0] || null;
+
+      // on construit un “mix” local (vidéo = écran, audio = écran OU micro selon dispo)
+      const mixed = new MediaStream();
+      if (screenVideo) mixed.addTrack(screenVideo);
+      if (screenAudio) {
+        mixed.addTrack(screenAudio);
+      } else if (micTrack) {
+        mixed.addTrack(micTrack);
+      }
+
+      // quand l’utilisateur arrête le partage, on revient caméra
+      screenVideo && screenVideo.addEventListener('ended', () => {
+        startCamera();
+      });
+
+      await setLocalStream(mixed);
+      statusText.textContent = 'Partage d’écran actif';
+
+      if (mediaConn && mediaConn.open) {
+        if (screenVideo) await replaceOutgoingTrack('video', screenVideo);
+        // côté audio, on remplace par screenAudio si dispo sinon on garde micTrack
+        const outAudio = screenAudio || micTrack;
+        if (outAudio) await replaceOutgoingTrack('audio', outAudio);
+      }
+    } catch (e) {
+      toast('Erreur partage d’écran : ' + e.message, 'error');
+    }
+  }
+
+  function handleRemoteStream(stream) {
+    remoteV.pause();
+    remoteV.srcObject = null;
+    remoteV.srcObject = stream;
+    remoteV.playsInline = true;
+    remoteV.muted = false;
+
+    // iOS : proposer le bouton d’activation son si nécessaire
+    if (isMobile()) ensureAudioUnlockButton();
+
+    setTimeout(() => {
+      remoteV.play().catch(err => console.warn('Lecture distante bloquée:', err));
+    }, 200);
+
+    chatBox.style.display = 'block';
+    screenshot.style.display = 'inline-block';
+    connectionStatus.textContent = '✅ Connecté à ' + (isClient ? 'Technicien' : 'Client');
+    audioNotif.play().catch(()=>{});
+    monitorRemoteMic(stream);
+  }
+
+  function monitorRemoteMic(stream) {
+    const a = stream.getAudioTracks()[0];
+    if (!a) return;
+    const set = (on) => {
+      remoteMicStatus.textContent = on ? "Micro distant : activé" : "Micro distant : coupé";
+      updateRemoteMicIcon(on);
+    };
+    set(a.enabled);
+    a.onmute   = () => set(false);
+    a.onunmute = () => set(true);
+  }
+
+  function hideConnectionControls() {
+    joinBtn.style.display = 'none';
+    genLinkBtn.style.display = 'none';
+    inviteLink.style.display = 'none';
+  }
+
+  function appendMessage(prefix, txt) {
+    const el = document.createElement('div');
+    el.textContent = `${prefix} : ${txt}`;
+    messages.appendChild(el);
+    messages.scrollTop = messages.scrollHeight;
+  }
+
+  function updatePingDisplay(ping) {
+    latencyEl.textContent = `Ping : ${ping} ms`;
+    latencyEl.className = ping < 100 ? 'ping-good' : ping < 200 ? 'ping-warn' : 'ping-bad';
+  }
+
+  // ==== UI events ====
+  toggleAudio.addEventListener('click', () => {
+    audioEnabled = !audioEnabled;
+    updateLocalMicToggle();
+  });
+
+  rotateCam.addEventListener('click', async () => {
+    facingMode = (facingMode === 'user' ? 'environment' : 'user');
+    await startCamera();
+  });
+
+  shareScreen.addEventListener('click', startScreenShare);
+
+  fullscreenLocalBtn.addEventListener('click', () => {
+    (localV.requestFullscreen || localV.webkitRequestFullscreen || function(){})();
+  });
+  fullscreenRemoteBtn.addEventListener('click', () => {
+    (remoteV.requestFullscreen || remoteV.webkitRequestFullscreen || function(){})();
+  });
+
+  sendBtn.addEventListener('click', () => {
+    const text = msgIn.value.trim();
+    if (dataConn && dataConn.open && text) {
+      dataConn.send(text);
+      appendMessage(isClient ? 'Client' : 'Technicien', text);
+      msgIn.value = '';
+    }
+  });
+
+  genLinkBtn.addEventListener('click', async () => {
+    const base = window.location.origin + window.location.pathname;
+    const link = `${base}?host=${peer.id}`;
+    inviteLink.value = link;
+    inviteLink.style.display = 'block';
+    try {
+      if (navigator.clipboard?.writeText) {
+        await navigator.clipboard.writeText(link);
+      } else {
+        inviteLink.select();
+        document.execCommand('copy');
+      }
+      toast('Lien d’invitation copié !', 'info');
+    } catch {
+      toast('Copie impossible. Copiez le lien manuellement.', 'warn');
+    }
+  });
+
+  document.getElementById('screenshot').addEventListener('click', async () => {
+    const canvas = await html2canvas(document.body);
+    const a = document.createElement('a');
+    a.href = canvas.toDataURL('image/png');
+    a.download = 'screenshot.png';
+    a.click();
+  });
+
+  // ==== Connexion logique ====
+  joinBtn.addEventListener('click', () => initCall(hostId));
+
+  async function initCall(remoteId) {
+    if (!remoteId || !peer.open) return toast('ID invalide ou Peer non connecté', 'error');
+    if (!localStream) await startCamera();
+
+    mediaConn = peer.call(remoteId, localStream);         // appel média
+    dataConn  = peer.connect(remoteId);                   // data channel
+
+    let timeout = setTimeout(() => {
+      if (!dataConn?.open && !mediaConn?.open) {
+        toast('⏳ Temps de connexion dépassé.', 'error');
+        connectionStatus.textContent = "❌ Connexion échouée.";
+        peer.disconnect();
+      }
+    }, 12000);
+
+    mediaConn.on('stream', handleRemoteStream);
+    mediaConn.on('error', e => toast('Erreur appel : ' + e, 'error'));
+
+    dataConn.on('open', () => {
+      clearTimeout(timeout);
+      hideConnectionControls();
+      connectionStatus.textContent = '✅ Connecté à ' + (isClient ? 'Technicien' : 'Client');
+      audioNotif.play().catch(()=>{});
+    });
+    dataConn.on('data', handleConnData);
+    dataConn.on('error', e => toast('Erreur data : ' + e, 'error'));
+  }
+
+  function handleConnData(data) {
+    if (typeof data === 'string') appendMessage(isClient ? 'Technicien' : 'Client', data);
+    if (data?.type === 'ping' && dataConn?.open) dataConn.send({ type: 'pong', time: data.time });
+    if (data?.type === 'pong') {
+      const ping = Date.now() - data.time;
+      updatePingDisplay(ping);
+    }
+  }
+
+  // ==== Peer events (réception) ====
+  peer.on('open', async id => {
+    setRoleLabels();
+    if (isClient) {
+      genLinkBtn.style.display = 'none';
+      joinBtn.style.display = 'inline-block';
+    }
+    await startCamera();
+  });
+
+  peer.on('call', async incomingCall => {
+    mediaConn = incomingCall;
+    if (!localStream) await startCamera();
+    mediaConn.answer(localStream, { metadata: { audio: true, video: true } });
+    mediaConn.on('stream', handleRemoteStream);
+    mediaConn.on('error', e => toast('Erreur appel : ' + e, 'error'));
+  });
+
+  peer.on('connection', c => {
+    dataConn = c;
+    dataConn.on('open', () => {
+      hideConnectionControls();
+      connectionStatus.textContent = '✅ Connecté à ' + (isClient ? 'Technicien' : 'Client');
+      audioNotif.play().catch(()=>{});
+    });
+    dataConn.on('data', handleConnData);
+    dataConn.on('error', e => toast('Erreur data : ' + e, 'error'));
+  });
+
+  peer.on('disconnected', () => {
+    toast('⚡ Connexion perdue. Tentative de reconnexion...', 'warn');
+    peer.reconnect();
+  });
+
+  peer.on('error', err => {
+    console.error(err);
+    toast('Peer error: ' + err.type, 'error');
+  });
+
+  // Ping périodique
+  setInterval(() => {
+    if (dataConn?.open) dataConn.send({ type: 'ping', time: Date.now() });
+  }, 3000);
+});
+</script>
+
 </body>
 </html>
