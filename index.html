@@ -1,464 +1,358 @@
 <!DOCTYPE html>
 <html lang="fr">
 <head>
-  <meta charset="UTF-8">
-  <title>MECASONIC Support Vidéo</title>
-  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MECASONIC • Support vidéo</title>
+  <link rel="preconnect" href="https://unpkg.com" />
   <style>
-    body { font-family: sans-serif; padding: 20px; text-align: center; margin-top: 60px; }
-    .video-wrapper { display: inline-block; margin: 10px; position: relative; }
-    .video-wrapper h3 { margin: 5px 0; position: relative; }
-    .mic-status { position: absolute; top: 0; right: -25px; font-size: 18px; }
-    video { width: 320px; height: auto; border: 1px solid #333; cursor: pointer; }
-    #chat { max-width: 400px; margin: 20px auto; text-align: left; }
-    #messages { border:1px solid #ccc; height: 150px; overflow-y: auto; padding: 5px; }
-    #controls > * { margin: 5px; }
-    button { padding: 8px 12px; }
-    input[readonly], input:disabled { background: #f0f0f0; }
-    #status { font-weight: bold; margin-top: 10px; }
-    #chat, #screenshot { display: none; }
-    #status-bar {
-      background: #333;
-      color: #fff;
-      padding: 10px;
-      position: fixed;
-      top: 0;
-      width: 100%;
-      z-index: 1000;
-      font-size: 14px;
-      display: flex;
-      justify-content: center;
-      flex-direction: column;
-      align-items: center;
+    :root{
+      --bg: #0f1115;
+      --bg-soft:#151823;
+      --panel:#161a25;
+      --text:#e8ecf1;
+      --muted:#9aa3b2;
+      --brand:#6aa6ff;
+      --brand-2:#5ef0c1;
+      --danger:#ff6b6b;
+      --warn:#ffb020;
+      --ok:#50d18a;
+      --border: rgba(255,255,255,0.08);
+      --shadow: 0 8px 30px rgba(0,0,0,.35);
+      --radius: 16px;
     }
-    .ping-good { color: lightgreen; }
-    .ping-warn { color: orange; }
-    .ping-bad  { color: red; }
+    @media (prefers-color-scheme: light){
+      :root{ --bg:#f5f7fb; --bg-soft:#ffffff; --panel:#ffffff; --text:#101318; --muted:#5b6270; --border:rgba(16,19,24,.08); --shadow: 0 6px 24px rgba(0,0,0,.08); }
+    }
+    *{box-sizing:border-box}
+    html, body{ height:100%; }
+    body{ margin:0; font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Helvetica Neue", Arial, "Apple Color Emoji", "Segoe UI Emoji"; background:linear-gradient(180deg, var(--bg) 0%, var(--bg-soft) 100%); color:var(--text); }
+
+    /* Header / status bar */
+    .topbar{ position:sticky; top:0; z-index:50; backdrop-filter:saturate(1.2) blur(8px); background: linear-gradient(90deg, rgba(106,166,255,.08), rgba(94,240,193,.08)); border-bottom:1px solid var(--border); }
+    .topbar-inner{ max-width:1100px; margin:0 auto; display:flex; align-items:center; gap:14px; padding:10px 16px; }
+    .brand{ display:flex; align-items:center; gap:10px; font-weight:700; letter-spacing:.2px; }
+    .badge{ font-size:12px; padding:4px 8px; border:1px solid var(--border); border-radius:9999px; background:rgba(255,255,255,.05); color:var(--muted); }
+    .status-line{ margin-left:auto; display:flex; align-items:center; gap:12px; font-size:14px; }
+    .dot{ width:10px; height:10px; border-radius:50%; display:inline-block; box-shadow:0 0 0 3px rgba(255,255,255,.06) inset; }
+    .dot.ok{ background:var(--ok) } .dot.warn{ background:var(--warn) } .dot.bad{ background:var(--danger) } .dot.idle{ background:#8a8f9b }
+
+    /* Layout */
+    .container{ max-width:1100px; margin:24px auto; padding:0 16px 100px; display:grid; grid-template-columns: 1fr 320px; gap:16px; }
+    @media (max-width: 980px){ .container{ grid-template-columns:1fr; } }
+
+    /* Video panel */
+    .panel{ background:var(--panel); border:1px solid var(--border); border-radius: var(--radius); box-shadow:var(--shadow); overflow:hidden; }
+    .panel-header{ display:flex; align-items:center; justify-content:space-between; padding:10px 12px; border-bottom:1px solid var(--border); }
+    .panel-title{ display:flex; align-items:center; gap:10px; font-weight:600; }
+    .role{ font-size:12px; color:var(--muted); }
+
+    .video-area{ position:relative; aspect-ratio: 16 / 9; background:#0b0e14; display:grid; place-items:center; }
+    video{ width:100%; height:100%; object-fit:cover; background:#000; }
+
+    /* Badges on videos */
+    .vid-badges{ position:absolute; top:10px; left:10px; display:flex; gap:8px; }
+    .chip{ display:inline-flex; align-items:center; gap:6px; padding:4px 8px; border-radius:999px; font-size:12px; border:1px solid var(--border); background:rgba(0,0,0,.35); }
+
+    /* Local thumb */
+    .local-thumb{ position:absolute; right:12px; bottom:12px; width:220px; max-width:35%; aspect-ratio: 16 / 9; border:1px solid var(--border); border-radius:12px; overflow:hidden; cursor:pointer; box-shadow:var(--shadow); }
+    .local-thumb video{ width:100%; height:100%; object-fit:cover; }
+    @media (max-width:720px){ .local-thumb{ width:140px; } }
+
+    /* Controls */
+    .controls{ display:flex; flex-wrap:wrap; gap:10px; padding:12px; border-top:1px solid var(--border); background:linear-gradient(180deg, rgba(255,255,255,.02), transparent); }
+    .btn{ appearance:none; border:1px solid var(--border); background:linear-gradient(180deg, rgba(255,255,255,.06), rgba(0,0,0,.06)); color:var(--text); padding:10px 12px; border-radius:12px; font-weight:600; cursor:pointer; display:inline-flex; align-items:center; gap:8px; box-shadow: 0 2px 0 rgba(0,0,0,.2); }
+    .btn:hover{ filter:brightness(1.06) }
+    .btn:active{ transform: translateY(1px) }
+    .btn.primary{ border-color:transparent; background: linear-gradient(90deg, var(--brand), var(--brand-2)); color:#0b0e14; }
+    .btn.ghost{ background: transparent; }
+
+    .field{ display:flex; gap:8px; width:100%; }
+    input[type="text"], input[readonly]{ flex:1; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:rgba(255,255,255,.04); color:var(--text); }
+
+    /* Sidebar (chat) */
+    .side{ display:flex; flex-direction:column; gap:12px; }
+    .card{ background:var(--panel); border:1px solid var(--border); border-radius: var(--radius); box-shadow:var(--shadow); overflow:hidden; }
+    .card-header{ padding:10px 12px; border-bottom:1px solid var(--border); font-weight:700; }
+    .chat-log{ height:280px; overflow:auto; padding:10px 12px; font-size:14px; display:flex; flex-direction:column; gap:6px; }
+    .msg{ padding:8px 10px; background:rgba(255,255,255,.04); border:1px solid var(--border); border-radius:10px; }
+    .chat-input{ display:flex; gap:8px; padding:10px; }
+    .chat-input input{ flex:1; }
+
+    /* Toasts */
+    .toasts{ position:fixed; bottom:20px; left:50%; transform:translateX(-50%); display:flex; flex-direction:column; gap:8px; z-index:100; }
+    .toast{ padding:10px 14px; border-radius:12px; color:#0b0e14; background:#d1f2e3; box-shadow:var(--shadow); border:1px solid rgba(0,0,0,.06); font-weight:700; }
+    .toast.warn{ background:#ffeac2 }
+    .toast.error{ background:#ffd6d6 }
+
+    /* Bottom mobile toolbar */
+    .dock{ position:fixed; bottom:14px; left:50%; transform:translateX(-50%); background:rgba(15,17,21,.6); border:1px solid var(--border); border-radius:9999px; padding:8px; display:flex; gap:8px; box-shadow:var(--shadow); backdrop-filter: blur(8px); z-index:60; }
+    .dock .btn{ padding:10px 12px; }
+    @media (min-width: 980px){ .dock{ display:none; } }
+
+    /* Utility */
+    .hidden{ display:none !important; }
   </style>
 </head>
 <body>
-  <div id="status-bar">
-    <div style="width: 100%; text-align: center;">
-      <div id="connection-status">⏳ En attente de connexion...</div>
-      <div>
-        <span id="latency">Ping : ...</span> |
-        <span id="remote-mic-status">Micro distant : inconnu</span>
+  <!-- Top status bar -->
+  <header class="topbar" role="banner">
+    <div class="topbar-inner" aria-live="polite">
+      <div class="brand" title="MECASONIC Support Vidéo">
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12a8 8 0 1 1 16 0" stroke="currentColor" stroke-width="2"/><path d="M12 4v8l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        MECASONIC
+        <span class="badge">Support vidéo</span>
+      </div>
+      <div class="status-line">
+        <span id="conn-dot" class="dot idle" aria-hidden="true"></span>
+        <span id="connection-status">En attente…</span>
+        <span aria-hidden="true">•</span>
+        <span id="latency">Ping : …</span>
+        <span aria-hidden="true">•</span>
+        <span id="remote-mic-status">Micro distant : inconnu</span>
       </div>
     </div>
-  </div>
+  </header>
 
-  <h1>Mecasonic Support Vidéo</h1>
+  <main class="container">
+    <!-- Main video panel -->
+    <section class="panel" aria-label="Zone vidéo">
+      <div class="panel-header">
+        <div class="panel-title">
+          <span id="main-role">Technicien</span>
+          <span class="role" id="sub-role">Appel en attente</span>
+        </div>
+        <div>
+          <button class="btn ghost" id="btn-fullscreen" title="Plein écran">⛶ Plein écran</button>
+        </div>
+      </div>
 
-  <div id="videos">
-    <div class="video-wrapper">
-      <h3 id="local-label">... <span id="local-mic" class="mic-status">🎤</span></h3>
-      <video id="local-video" autoplay muted playsinline></video>
-      <button id="fullscreen-local">Plein écran</button>
-    </div>
-    <div class="video-wrapper">
-      <h3 id="remote-label">... <span id="remote-mic" class="mic-status">🎤</span></h3>
-      <video id="remote-video" autoplay playsinline></video>
-      <button id="fullscreen-remote">Plein écran</button>
-    </div>
-  </div>
+      <div class="video-area" id="video-area">
+        <div class="vid-badges">
+          <span class="chip" id="remote-mic-chip">🎤 Micro</span>
+          <span class="chip" id="sharing-chip" style="display:none">🖥️ Partage d’écran</span>
+        </div>
+        <video id="remote-video" autoplay playsinline></video>
+        <div class="local-thumb" id="local-thumb" title="Cliquer pour échanger les vues (PIP)">
+          <video id="local-video" autoplay muted playsinline></video>
+        </div>
+      </div>
 
-  <div id="controls">
-    <button id="rotate-camera">↺ Inverser caméra</button>
-    <button id="share-screen">🔍 Partager écran</button>
-    <button id="toggle-audio">🔇 Couper micro</button>
-    <br>
-    <button id="join-btn" style="display:none;">Join Call</button>
-    <br>
-    <button id="gen-link">🔗 Générer lien invitation</button>
-    <input id="invite-link" readonly style="width:100%;display:none">
-    <p id="status"></p>
-    <button id="screenshot">📸 Prendre capture</button>
-  </div>
+      <div class="controls" id="controls">
+        <button class="btn primary" id="btn-invite">🔗 Inviter</button>
+        <button class="btn" id="btn-join" style="display:none">Rejoindre</button>
+        <div class="field" id="invite-field" style="display:none">
+          <input type="text" id="invite-link" readonly aria-label="Lien d’invitation" />
+          <button class="btn" id="btn-copy">Copier</button>
+          <button class="btn" id="btn-share" title="Partager">Partager</button>
+        </div>
+        <span style="flex:1"></span>
+        <button class="btn" id="btn-toggle-audio">🔇 Couper micro</button>
+        <button class="btn" id="btn-rotate">↺ Inverser caméra</button>
+        <button class="btn" id="btn-share-screen">🖥️ Partager écran</button>
+        <button class="btn" id="btn-shot">📸 Capture</button>
+      </div>
+    </section>
 
-  <div id="chat">
-    <h3>Chat</h3>
-    <div id="messages"></div>
-    <input id="msg-input" placeholder="Écrire un message…">
-    <button id="send-msg">Envoyer</button>
-  </div>
-<script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
-<script>
-document.addEventListener('DOMContentLoaded', async () => {
-  const peer = new Peer( {
-  });
-  const rotateCam   = document.getElementById('rotate-camera');
-  const shareScreen = document.getElementById('share-screen');
-  const joinBtn     = document.getElementById('join-btn');
-  const genLinkBtn  = document.getElementById('gen-link');
-  const inviteLink  = document.getElementById('invite-link');
-  const localV      = document.getElementById('local-video');
-  const remoteV     = document.getElementById('remote-video');
-  const localLabel  = document.getElementById('local-label');
-  const remoteLabel = document.getElementById('remote-label');
-  const localMicIcon  = document.getElementById('local-mic');
-  const remoteMicIcon = document.getElementById('remote-mic');
-  const statusText  = document.getElementById('status');
-  const msgIn       = document.getElementById('msg-input');
-  const sendBtn     = document.getElementById('send-msg');
-  const messages    = document.getElementById('messages');
-  const screenshot  = document.getElementById('screenshot');
-  const toggleAudio = document.getElementById('toggle-audio');
-  const chatBox     = document.getElementById('chat');
-  const fullscreenLocalBtn  = document.getElementById('fullscreen-local');
-  const fullscreenRemoteBtn = document.getElementById('fullscreen-remote');
-  const connectionStatus = document.getElementById('connection-status');
-  const latencyEl        = document.getElementById('latency');
-  const remoteMicStatus  = document.getElementById('remote-mic-status');
+    <!-- Sidebar: Chat -->
+    <aside class="side" aria-label="Barre latérale">
+      <div class="card">
+        <div class="card-header">Chat</div>
+        <div class="chat-log" id="messages" aria-live="polite"></div>
+        <div class="chat-input">
+          <input id="msg-input" placeholder="Écrire un message…" />
+          <button class="btn" id="btn-send">Envoyer</button>
+        </div>
+      </div>
 
-  // Bouton pour lever l’autoplay sur iOS
-  let audioUnlockBtn;
-  function ensureAudioUnlockButton() {
-    if (audioUnlockBtn) return;
-    audioUnlockBtn = document.createElement('button');
-    audioUnlockBtn.textContent = "🔊 Activer le son";
-    audioUnlockBtn.style.position = 'fixed';
-    audioUnlockBtn.style.right = '16px';
-    audioUnlockBtn.style.bottom = '16px';
-    audioUnlockBtn.style.zIndex = 9999;
-    audioUnlockBtn.addEventListener('click', () => {
-      remoteV.muted = false;
-      remoteV.play().catch(()=>{});
-      audioUnlockBtn.remove();
-    });
-    document.body.appendChild(audioUnlockBtn);
-  }
+      <div class="card">
+        <div class="card-header">Statut</div>
+        <div style="padding:10px 12px; color:var(--muted)" id="status">—</div>
+      </div>
+    </aside>
+  </main>
 
-  const audioNotif = new Audio("https://www.soundjay.com/buttons/sounds/button-3.mp3");
+  <!-- Mobile dock for quick controls -->
+  <nav class="dock" aria-label="Raccourcis">
+    <button class="btn" id="m-toggle-audio" title="Couper/activer le micro">🎙️</button>
+    <button class="btn" id="m-rotate" title="Changer de caméra">↺</button>
+    <button class="btn" id="m-share" title="Partager écran">🖥️</button>
+    <button class="btn" id="m-shot" title="Capture">📸</button>
+  </nav>
 
-  // ==== State ====
-  let localStream = null;      // stream “source” (caméra ou écran + micro)
-  let micTrack = null;         // on mémorise la track micro pour la mixer pendant le screen share
-  let facingMode = 'user';
-  let audioEnabled = true;
-  let dataConn = null;         // PeerJS DataConnection (chat/ping)
-  let mediaConn = null;        // PeerJS MediaConnection (appel)
-  let isClient = false;
+  <div class="toasts" id="toasts" aria-live="polite" aria-atomic="true"></div>
 
-  // ==== URL role ====
-  const url = new URL(window.location.href);
-  const hostId = url.searchParams.get('host');
-  isClient = Boolean(hostId);
+  <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+  <script>
+  document.addEventListener('DOMContentLoaded', () => {
+    // --- Elements ---
+    const remoteV = document.getElementById('remote-video');
+    const localV  = document.getElementById('local-video');
+    const localThumb = document.getElementById('local-thumb');
 
-  // ==== Helpers ====
-  const isMobile = () => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    const btnInvite = document.getElementById('btn-invite');
+    const btnJoin   = document.getElementById('btn-join');
+    const inviteField = document.getElementById('invite-field');
+    const inviteInput = document.getElementById('invite-link');
+    const btnCopy   = document.getElementById('btn-copy');
+    const btnShare  = document.getElementById('btn-share');
 
-  function toast(message, type = 'info') {
-    const el = document.createElement('div');
-    el.textContent = message;
-    el.style.position = 'fixed';
-    el.style.bottom = '20px';
-    el.style.left = '50%';
-    el.style.transform = 'translateX(-50%)';
-    el.style.padding = '10px 20px';
-    el.style.borderRadius = '5px';
-    el.style.color = '#fff';
-    el.style.background = type === 'error' ? 'red' : type === 'warn' ? 'orange' : 'green';
-    el.style.zIndex = 9999;
-    document.body.appendChild(el);
-    setTimeout(() => el.remove(), 3500);
-  }
+    const btnToggleAudio = document.getElementById('btn-toggle-audio');
+    const btnRotate = document.getElementById('btn-rotate');
+    const btnShareScreen = document.getElementById('btn-share-screen');
+    const btnShot = document.getElementById('btn-shot');
+    const btnFullscreen = document.getElementById('btn-fullscreen');
 
-  function updateLocalMicIcon() {
-    localMicIcon.textContent = audioEnabled ? '🎤' : '🔇';
-  }
-  function updateRemoteMicIcon(enabled) {
-    remoteMicIcon.textContent = enabled ? '🎤' : '🔇';
-  }
-  function setRoleLabels() {
-    // On évite childNodes[0] fragile
-    localLabel.innerHTML  = (isClient ? 'Client '     : 'Technicien ') + `<span id="local-mic" class="mic-status">${audioEnabled?'🎤':'🔇'}</span>`;
-    remoteLabel.innerHTML = (isClient ? 'Technicien ' : 'Client ')     + `<span id="remote-mic" class="mic-status">🎤</span>`;
-  }
+    // Mobile dock mirrors
+    const mToggle = document.getElementById('m-toggle-audio');
+    const mRotate = document.getElementById('m-rotate');
+    const mShare  = document.getElementById('m-share');
+    const mShot   = document.getElementById('m-shot');
 
-  async function stopStream(stream) {
-    if (!stream) return;
-    stream.getTracks().forEach(t => t.stop());
-  }
+    const messages = document.getElementById('messages');
+    const msgInput = document.getElementById('msg-input');
+    const btnSend  = document.getElementById('btn-send');
 
-  async function getUserMediaStream() {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      video: { facingMode },
-      audio: true
-    });
-    // on isole/retient la track micro pour la réutiliser
-    micTrack = stream.getAudioTracks()[0] || null;
-    return stream;
-  }
+    const connDot  = document.getElementById('conn-dot');
+    const connStatus = document.getElementById('connection-status');
+    const latencyEl = document.getElementById('latency');
+    const remoteMicStatus = document.getElementById('remote-mic-status');
+    const remoteMicChip   = document.getElementById('remote-mic-chip');
+    const sharingChip     = document.getElementById('sharing-chip');
+    const statusText = document.getElementById('status');
 
-  async function setLocalStream(stream) {
-    await stopStream(localStream);   // stoppe l’ancien stream proprement
-    localStream = stream;
-    localV.srcObject = stream;
-    localV.muted = true; // éviter écho local
-    updateLocalMicToggle();
-  }
+    const mainRole = document.getElementById('main-role');
+    const subRole  = document.getElementById('sub-role');
 
-  function updateLocalMicToggle() {
-    if (!micTrack) return;
-    micTrack.enabled = audioEnabled;
-    toggleAudio.textContent = audioEnabled ? '🔇 Couper micro' : '🎤 Activer micro';
-    updateLocalMicIcon();
-  }
+    // --- Utilities ---
+    const toasts = document.getElementById('toasts');
+    function toast(txt, type=''){ const t=document.createElement('div'); t.className='toast'+(type?(' '+type):''); t.textContent=txt; toasts.appendChild(t); setTimeout(()=>t.remove(), 3200); }
+    function setConn(state){ connDot.className = 'dot '+state; }
+    function updatePing(ms){ latencyEl.textContent = `Ping : ${ms} ms`; setConn(ms<100?'ok': ms<220?'warn':'bad'); }
+    function appendMsg(from, txt){ const el=document.createElement('div'); el.className='msg'; el.textContent = `${from} : ${txt}`; messages.appendChild(el); messages.scrollTop = messages.scrollHeight; }
+    function isMobile(){ return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent); }
 
-  async function replaceOutgoingTrack(kind, newTrack) {
-    if (!mediaConn || !mediaConn.peerConnection) return;
-    const sender = mediaConn.peerConnection.getSenders().find(s => s.track && s.track.kind === kind);
-    if (sender) {
-      await sender.replaceTrack(newTrack);
+    // --- Sounds ---
+    const ding = new Audio('https://www.soundjay.com/buttons/sounds/button-3.mp3');
+
+    // --- State ---
+    let peer = new Peer({});
+    let dataConn=null, mediaConn=null;
+    let localStream=null, micTrack=null;
+    let audioEnabled = true;
+    let facingMode = 'user';
+    let isClient = false;
+
+    // Role via URL
+    const url = new URL(window.location.href);
+    const hostId = url.searchParams.get('host');
+    isClient = Boolean(hostId);
+
+    mainRole.textContent = isClient ? 'Client' : 'Technicien';
+    subRole.textContent  = 'En attente de connexion';
+
+    function updateLocalMic(){ if(micTrack){ micTrack.enabled = audioEnabled; btnToggleAudio.textContent = audioEnabled? '🔇 Couper micro' : '🎤 Activer micro'; } }
+
+    async function stopStream(s){ if(!s) return; s.getTracks().forEach(t=>t.stop()); }
+
+    async function startCamera(){
+      try{
+        const s = await navigator.mediaDevices.getUserMedia({ video:{facingMode}, audio:true });
+        micTrack = s.getAudioTracks()[0] || null;
+        await setLocalStream(s);
+        if(mediaConn?.open){
+          const v=s.getVideoTracks()[0]; if(v) await replaceOutgoing('video', v);
+          const a=micTrack; if(a) await replaceOutgoing('audio', a);
+        }
+        subRole.textContent = 'Caméra prête';
+      }catch(e){ toast('Accès caméra/micro refusé','error'); statusText.textContent = 'Erreur : '+e.message; }
     }
-  }
 
-  async function startCamera() {
-    try {
-      const cam = await getUserMediaStream();
-      await setLocalStream(cam);
-      statusText.textContent = 'Caméra/Micro activés';
-      // si déjà en appel, remplace les tracks côté RTCRtpSender
-      if (mediaConn && mediaConn.open) {
-        const v = cam.getVideoTracks()[0];
-        const a = micTrack;
-        if (v) await replaceOutgoingTrack('video', v);
-        if (a) await replaceOutgoingTrack('audio', a);
-      }
-    } catch (e) {
-      console.warn(e);
-      statusText.textContent = 'Accès caméra/micro refusé';
-      toast('Erreur caméra/micro : ' + e.message, 'error');
+    async function startShare(){
+      try{
+        const disp = await navigator.mediaDevices.getDisplayMedia({ video:true, audio:true });
+        const v = disp.getVideoTracks()[0]||null; const a = disp.getAudioTracks()[0]||null;
+        const mixed = new MediaStream(); if(v) mixed.addTrack(v); if(a) mixed.addTrack(a); else if(micTrack) mixed.addTrack(micTrack);
+        if(v){ v.addEventListener('ended', ()=>{ sharingChip.style.display='none'; startCamera(); }); }
+        await setLocalStream(mixed);
+        sharingChip.style.display='inline-flex';
+        if(mediaConn?.open){ if(v) await replaceOutgoing('video', v); const outA=a||micTrack; if(outA) await replaceOutgoing('audio', outA); }
+      }catch(e){ toast('Partage d’écran annulé','warn'); }
     }
-  }
 
-  async function startScreenShare() {
-    try {
-      const display = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: true });
-      // si l’audio d’écran n’est pas dispo, on garde le micro (micTrack)
-      const screenVideo = display.getVideoTracks()[0] || null;
-      const screenAudio = display.getAudioTracks()[0] || null;
+    async function setLocalStream(s){ await stopStream(localStream); localStream=s; localV.srcObject=s; localV.muted=true; updateLocalMic(); }
 
-      // on construit un “mix” local (vidéo = écran, audio = écran OU micro selon dispo)
-      const mixed = new MediaStream();
-      if (screenVideo) mixed.addTrack(screenVideo);
-      if (screenAudio) {
-        mixed.addTrack(screenAudio);
-      } else if (micTrack) {
-        mixed.addTrack(micTrack);
+    async function replaceOutgoing(kind, track){ const sender = mediaConn?.peerConnection?.getSenders().find(s=>s.track && s.track.kind===kind); if(sender){ await sender.replaceTrack(track); } }
+
+    function onRemoteStream(stream){ remoteV.pause(); remoteV.srcObject=null; remoteV.srcObject=stream; remoteV.muted=false; setTimeout(()=>remoteV.play().catch(()=>{}), 100);
+      if(isMobile()){ // unlock helper
+        const b=document.createElement('button'); b.textContent='🔊 Activer le son'; b.style.position='fixed'; b.style.right='16px'; b.style.bottom='16px'; b.style.zIndex=80; b.onclick=()=>{ remoteV.muted=false; remoteV.play().catch(()=>{}); b.remove(); }; document.body.appendChild(b);
       }
-
-      // quand l’utilisateur arrête le partage, on revient caméra
-      screenVideo && screenVideo.addEventListener('ended', () => {
-        startCamera();
-      });
-
-      await setLocalStream(mixed);
-      statusText.textContent = 'Partage d’écran actif';
-
-      if (mediaConn && mediaConn.open) {
-        if (screenVideo) await replaceOutgoingTrack('video', screenVideo);
-        // côté audio, on remplace par screenAudio si dispo sinon on garde micTrack
-        const outAudio = screenAudio || micTrack;
-        if (outAudio) await replaceOutgoingTrack('audio', outAudio);
-      }
-    } catch (e) {
-      toast('Erreur partage d’écran : ' + e.message, 'error');
+      monitorRemoteMic(stream);
+      subRole.textContent='Connecté'; connStatus.textContent = 'Connecté à '+(isClient?'Technicien':'Client'); setConn('ok'); ding.play().catch(()=>{});
     }
-  }
 
-  function handleRemoteStream(stream) {
-    remoteV.pause();
-    remoteV.srcObject = null;
-    remoteV.srcObject = stream;
-    remoteV.playsInline = true;
-    remoteV.muted = false;
+    function monitorRemoteMic(stream){ const a=stream.getAudioTracks()[0]; if(!a) return; const set=(on)=>{ remoteMicStatus.textContent = on?'Micro distant : activé':'Micro distant : coupé'; remoteMicChip.textContent = (on?'🎤 ':'🔇 ')+ 'Micro'; }; set(a.enabled); a.onmute=()=>set(false); a.onunmute=()=>set(true); }
 
-    // iOS : proposer le bouton d’activation son si nécessaire
-    if (isMobile()) ensureAudioUnlockButton();
+    // Swap videos (PIP)
+    localThumb.addEventListener('click', ()=>{ const big=remoteV.srcObject; const small=localV.srcObject; remoteV.srcObject=small; localV.srcObject=big; });
 
-    setTimeout(() => {
-      remoteV.play().catch(err => console.warn('Lecture distante bloquée:', err));
-    }, 200);
+    // --- Buttons ---
+    btnToggleAudio.onclick = ()=>{ audioEnabled=!audioEnabled; updateLocalMic(); };
+    btnRotate.onclick = ()=>{ facingMode = (facingMode==='user'?'environment':'user'); startCamera(); };
+    btnShareScreen.onclick = ()=> startShare();
+    btnShot.onclick = async ()=>{ const cvs = await html2canvas(document.querySelector('.video-area')); const a=document.createElement('a'); a.href=cvs.toDataURL('image/png'); a.download='screenshot.png'; a.click(); };
+    btnFullscreen.onclick = ()=>{ const el=document.getElementById('video-area'); (el.requestFullscreen||el.webkitRequestFullscreen||el.msRequestFullscreen||(()=>{})).call(el); };
 
-    chatBox.style.display = 'block';
-    screenshot.style.display = 'inline-block';
-    connectionStatus.textContent = '✅ Connecté à ' + (isClient ? 'Technicien' : 'Client');
-    audioNotif.play().catch(()=>{});
-    monitorRemoteMic(stream);
-  }
+    // Mobile dock mirrors
+    mToggle.onclick = ()=>btnToggleAudio.click(); mRotate.onclick=()=>btnRotate.click(); mShare.onclick=()=>btnShareScreen.click(); mShot.onclick=()=>btnShot.click();
 
-  function monitorRemoteMic(stream) {
-    const a = stream.getAudioTracks()[0];
-    if (!a) return;
-    const set = (on) => {
-      remoteMicStatus.textContent = on ? "Micro distant : activé" : "Micro distant : coupé";
-      updateRemoteMicIcon(on);
+    // Invite / Join
+    btnInvite.onclick = ()=>{
+      const base = location.origin + location.pathname; const link = `${base}?host=${peer.id}`;
+      inviteInput.value = link; inviteField.style.display='flex';
+      if(navigator.share){
+        btnShare.classList.remove('hidden');
+      }
     };
-    set(a.enabled);
-    a.onmute   = () => set(false);
-    a.onunmute = () => set(true);
-  }
+    btnCopy.onclick = async ()=>{ try{ await navigator.clipboard.writeText(inviteInput.value); toast('Lien copié'); }catch{ toast('Copie impossible','warn'); } };
+    btnShare.onclick = async ()=>{ try{ await navigator.share({ title:'Rejoindre l’appel MECASONIC', url: inviteInput.value }); }catch{} };
 
-  function hideConnectionControls() {
-    joinBtn.style.display = 'none';
-    genLinkBtn.style.display = 'none';
-    inviteLink.style.display = 'none';
-  }
+    btnJoin.onclick = ()=> initCall(hostId);
 
-  function appendMessage(prefix, txt) {
-    const el = document.createElement('div');
-    el.textContent = `${prefix} : ${txt}`;
-    messages.appendChild(el);
-    messages.scrollTop = messages.scrollHeight;
-  }
+    // Chat
+    btnSend.onclick = ()=>{ const t=msgInput.value.trim(); if(!t) return; if(dataConn?.open){ dataConn.send(t); appendMsg(isClient?'Client':'Technicien', t); msgInput.value=''; } };
 
-  function updatePingDisplay(ping) {
-    latencyEl.textContent = `Ping : ${ping} ms`;
-    latencyEl.className = ping < 100 ? 'ping-good' : ping < 200 ? 'ping-warn' : 'ping-bad';
-  }
-
-  // ==== UI events ====
-  toggleAudio.addEventListener('click', () => {
-    audioEnabled = !audioEnabled;
-    updateLocalMicToggle();
-  });
-
-  rotateCam.addEventListener('click', async () => {
-    facingMode = (facingMode === 'user' ? 'environment' : 'user');
-    await startCamera();
-  });
-
-  shareScreen.addEventListener('click', startScreenShare);
-
-  fullscreenLocalBtn.addEventListener('click', () => {
-    (localV.requestFullscreen || localV.webkitRequestFullscreen || function(){})();
-  });
-  fullscreenRemoteBtn.addEventListener('click', () => {
-    (remoteV.requestFullscreen || remoteV.webkitRequestFullscreen || function(){})();
-  });
-
-  sendBtn.addEventListener('click', () => {
-    const text = msgIn.value.trim();
-    if (dataConn && dataConn.open && text) {
-      dataConn.send(text);
-      appendMessage(isClient ? 'Client' : 'Technicien', text);
-      msgIn.value = '';
-    }
-  });
-
-  genLinkBtn.addEventListener('click', async () => {
-    const base = window.location.origin + window.location.pathname;
-    const link = `${base}?host=${peer.id}`;
-    inviteLink.value = link;
-    inviteLink.style.display = 'block';
-    try {
-      if (navigator.clipboard?.writeText) {
-        await navigator.clipboard.writeText(link);
-      } else {
-        inviteLink.select();
-        document.execCommand('copy');
+    // Peer events
+    peer.on('open', async id=>{
+      if(isClient){ btnJoin.style.display='inline-block'; btnInvite.style.display='none'; inviteField.style.display='none'; } else {
+        btnInvite.style.display='inline-block';
       }
-      toast('Lien d’invitation copié !', 'info');
-    } catch {
-      toast('Copie impossible. Copiez le lien manuellement.', 'warn');
-    }
-  });
-
-  document.getElementById('screenshot').addEventListener('click', async () => {
-    const canvas = await html2canvas(document.body);
-    const a = document.createElement('a');
-    a.href = canvas.toDataURL('image/png');
-    a.download = 'screenshot.png';
-    a.click();
-  });
-
-  // ==== Connexion logique ====
-  joinBtn.addEventListener('click', () => initCall(hostId));
-
-  async function initCall(remoteId) {
-    if (!remoteId || !peer.open) return toast('ID invalide ou Peer non connecté', 'error');
-    if (!localStream) await startCamera();
-
-    mediaConn = peer.call(remoteId, localStream);         // appel média
-    dataConn  = peer.connect(remoteId);                   // data channel
-
-    let timeout = setTimeout(() => {
-      if (!dataConn?.open && !mediaConn?.open) {
-        toast('⏳ Temps de connexion dépassé.', 'error');
-        connectionStatus.textContent = "❌ Connexion échouée.";
-        peer.disconnect();
-      }
-    }, 12000);
-
-    mediaConn.on('stream', handleRemoteStream);
-    mediaConn.on('error', e => toast('Erreur appel : ' + e, 'error'));
-
-    dataConn.on('open', () => {
-      clearTimeout(timeout);
-      hideConnectionControls();
-      connectionStatus.textContent = '✅ Connecté à ' + (isClient ? 'Technicien' : 'Client');
-      audioNotif.play().catch(()=>{});
+      await startCamera();
     });
-    dataConn.on('data', handleConnData);
-    dataConn.on('error', e => toast('Erreur data : ' + e, 'error'));
-  }
 
-  function handleConnData(data) {
-    if (typeof data === 'string') appendMessage(isClient ? 'Technicien' : 'Client', data);
-    if (data?.type === 'ping' && dataConn?.open) dataConn.send({ type: 'pong', time: data.time });
-    if (data?.type === 'pong') {
-      const ping = Date.now() - data.time;
-      updatePingDisplay(ping);
+    peer.on('call', async inc =>{ mediaConn=inc; if(!localStream) await startCamera(); mediaConn.answer(localStream, { metadata:{ audio:true, video:true }}); mediaConn.on('stream', onRemoteStream); mediaConn.on('error', e=>toast('Erreur appel: '+e,'error')); });
+    peer.on('connection', c=>{ dataConn=c; dataConn.on('open', ()=>{ connStatus.textContent='Connecté'; setConn('ok'); ding.play().catch(()=>{}); }); dataConn.on('error', e=>toast('Erreur data: '+e,'error')); dataConn.on('data', onConnData); });
+    peer.on('disconnected', ()=>{ toast('Connexion perdue. Reconnexion…','warn'); peer.reconnect(); setConn('warn'); });
+    peer.on('error', err=>{ console.error(err); toast('Peer error: '+err.type,'error'); setConn('bad'); });
+
+    function onConnData(d){ if(typeof d==='string'){ appendMsg(isClient?'Technicien':'Client', d); }
+      if(d?.type==='ping' && dataConn?.open){ dataConn.send({type:'pong', time:d.time}); }
+      if(d?.type==='pong'){ updatePing(Date.now()-d.time); }
     }
-  }
 
-  // ==== Peer events (réception) ====
-  peer.on('open', async id => {
-    setRoleLabels();
-    if (isClient) {
-      genLinkBtn.style.display = 'none';
-      joinBtn.style.display = 'inline-block';
+    async function initCall(remoteId){ if(!remoteId || !peer.open){ toast('ID invalide ou Peer non connecté','error'); return; } if(!localStream) await startCamera();
+      mediaConn = peer.call(remoteId, localStream); dataConn = peer.connect(remoteId);
+      let guard=setTimeout(()=>{ if(!dataConn?.open && !mediaConn?.open){ toast('Temps de connexion dépassé','error'); connStatus.textContent='Connexion échouée'; setConn('bad'); peer.disconnect(); } }, 12000);
+      mediaConn.on('stream', onRemoteStream); mediaConn.on('error', e=>toast('Erreur appel: '+e,'error'));
+      dataConn.on('open', ()=>{ clearTimeout(guard); inviteField.style.display='none'; connStatus.textContent='Connecté'; setConn('ok'); ding.play().catch(()=>{}); });
+      dataConn.on('data', onConnData); dataConn.on('error', e=>toast('Erreur data: '+e,'error'));
     }
-    await startCamera();
+
+    // Pings
+    setInterval(()=>{ if(dataConn?.open){ dataConn.send({type:'ping', time:Date.now()}); } }, 3000);
   });
-
-  peer.on('call', async incomingCall => {
-    mediaConn = incomingCall;
-    if (!localStream) await startCamera();
-    mediaConn.answer(localStream, { metadata: { audio: true, video: true } });
-    mediaConn.on('stream', handleRemoteStream);
-    mediaConn.on('error', e => toast('Erreur appel : ' + e, 'error'));
-  });
-
-  peer.on('connection', c => {
-    dataConn = c;
-    dataConn.on('open', () => {
-      hideConnectionControls();
-      connectionStatus.textContent = '✅ Connecté à ' + (isClient ? 'Technicien' : 'Client');
-      audioNotif.play().catch(()=>{});
-    });
-    dataConn.on('data', handleConnData);
-    dataConn.on('error', e => toast('Erreur data : ' + e, 'error'));
-  });
-
-  peer.on('disconnected', () => {
-    toast('⚡ Connexion perdue. Tentative de reconnexion...', 'warn');
-    peer.reconnect();
-  });
-
-  peer.on('error', err => {
-    console.error(err);
-    toast('Peer error: ' + err.type, 'error');
-  });
-
-  // Ping périodique
-  setInterval(() => {
-    if (dataConn?.open) dataConn.send({ type: 'ping', time: Date.now() });
-  }, 3000);
-});
-</script>
-
+  </script>
 </body>
 </html>
