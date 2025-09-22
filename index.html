@@ -239,6 +239,7 @@
     // --- State ---
     let peer = new Peer({});
     let dataConn=null, mediaConn=null;
+    let peerReady=false;
     let localStream=null, micTrack=null;
     let audioEnabled = true;
     let facingMode = 'user';
@@ -310,11 +311,15 @@
 
     // Invite / Join
     btnInvite.onclick = ()=>{
+      if(!peerReady){ toast('Initialisation en cours… réessaie dans une seconde', 'warn'); return; }
       const base = location.origin + location.pathname; const link = `${base}?host=${peer.id}`;
       inviteInput.value = link; inviteField.style.display='flex';
-      if(navigator.share){
-        btnShare.classList.remove('hidden');
-      }
+      // Toujours afficher le champ pour mobile (sélection longue possible)
+      try{
+        if(navigator.share && location.protocol === 'https:'){
+          btnShare.classList.remove('hidden');
+        }
+      }catch{}
     };
     btnCopy.onclick = async ()=>{ try{ await navigator.clipboard.writeText(inviteInput.value); toast('Lien copié'); }catch{ toast('Copie impossible','warn'); } };
     btnShare.onclick = async ()=>{ try{ await navigator.share({ title:'Rejoindre l’appel MECASONIC', url: inviteInput.value }); }catch{} };
@@ -326,10 +331,17 @@
 
     // Peer events
     peer.on('open', async id=>{
-      if(isClient){ btnJoin.style.display='inline-block'; btnInvite.style.display='none'; inviteField.style.display='none'; } else {
+      peerReady = true;
+      if(isClient){
+        btnJoin.style.display='inline-block';
+        btnInvite.style.display='none';
+        inviteField.style.display='none';
+      } else {
         btnInvite.style.display='inline-block';
       }
       await startCamera();
+      // Auto-join côté client pour éviter l'oubli du bouton "Rejoindre"
+      if(isClient && hostId){ setTimeout(()=> initCall(hostId), 300); }
     });
 
     peer.on('call', async inc =>{ mediaConn=inc; if(!localStream) await startCamera(); mediaConn.answer(localStream, { metadata:{ audio:true, video:true }}); mediaConn.on('stream', onRemoteStream); mediaConn.on('error', e=>toast('Erreur appel: '+e,'error')); });
