@@ -301,44 +301,72 @@
     }
 
     // Bascule caméra sans couper (remplace uniquement la piste vidéo)
-    async function switchCamera(){
-      const newFacing = (facingMode === 'user' ? 'environment' : 'user');
+// Bascule caméra sans couper (essais en cascade + rollback sûr)
+async function switchCamera(){
+  const targetFacing = (facingMode === 'user' ? 'environment' : 'user');
 
-      // 1) Contrainte vidéo (deviceId précis si possible, sinon facingMode)
-      const deviceId = await getDeviceIdForFacing(newFacing);
-      const videoConstraints = deviceId
-        ? { deviceId: { exact: deviceId } }
-        : { facingMode: { ideal: newFacing } };
+  // helper local : tente getUserMedia avec contraintes, renvoie la vidéo ou null
+  async function tryGUM(vc){
+    try{
+      const s = await navigator.mediaDevices.getUserMedia({ video: vc, audio: false });
+      const v = s.getVideoTracks()[0] || null;
+      if(!v){ try{ s.getTracks().forEach(t=>t.stop()); }catch{}; return null; }
+      return { track: v, stream: s };
+    }catch{ return null; }
+  }
 
-      // 2) Nouvelle piste vidéo uniquement (audio:false)
-      const tmp = await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: false });
-      const newVideo = tmp.getVideoTracks()[0];
-      if(!newVideo){ toast('Impossible d’accéder à la caméra demandée', 'error'); return; }
+  // 1) on tente avec deviceId exact si on sait le trouver
+  const deviceId = await getDeviceIdForFacing(targetFacing);
+  let attempt =
+    deviceId && await tryGUM({ deviceId: { exact: deviceId } });
 
-      // 3) Remplacer la piste sortante côté RTCPeerConnection
-      if(mediaConn?.open){
-        await replaceOutgoing('video', newVideo);
-      }
+  // 2) sinon on tente un facingMode "fort" (exact/ideal selon moteurs)
+  if(!attempt){
+    attempt = await tryGUM({ facingMode: { exact: targetFacing } }) ||
+              await tryGUM({ facingMode: { ideal: targetFacing } });
+  }
 
-      // 4) Mettre à jour le preview local sans toucher au micro
-      if(!localStream){
-        localStream = new MediaStream();
-        if(micTrack) localStream.addTrack(micTrack);
-      }
-      // retirer anciennes vidéos
-      const oldVideos = localStream.getVideoTracks();
-      oldVideos.forEach(t=>{ try{ localStream.removeTrack(t); }catch{} try{ t.stop(); }catch{} });
-      // ajouter la nouvelle
-      localStream.addTrack(newVideo);
-      localV.srcObject = localStream;
+  // 3) dernier fallback minimaliste (certains WebKit aiment bien)
+  if(!attempt){
+    attempt = await tryGUM({ facingMode: targetFacing });
+  }
 
-      // 5) on n'a plus besoin du wrapper tmp
-      try{ tmp.getTracks().forEach(t=>{ if(t.readyState==='live') t.stop(); }); }catch{}
+  if(!attempt || !attempt.track){
+    toast('Impossible d’inverser la caméra (contrainte refusée par le navigateur).', 'error');
+    return;
+  }
 
-      // 6) mémoriser l'état
-      facingMode = newFacing;
-      subRole.textContent = (newFacing==='environment' ? 'Caméra arrière' : 'Caméra frontale');
+  const newVideo = attempt.track;
+
+  // Remplacement côté RTCPeerConnection (à chaud)
+  if(mediaConn?.open){
+    try{
+      await replaceOutgoing('video', newVideo);
+    }catch{
+      // si replaceTrack indisponible (très rare), on abandonne proprement
+      try{ attempt.stream.getTracks().forEach(t=>t.stop()); }catch{}
+      toast('Remplacement de piste vidéo refusé par le navigateur.', 'error');
+      return;
     }
+  }
+
+  // Mise à jour du preview local SANS toucher au micro
+  if(!localStream){
+    localStream = new MediaStream();
+    if(micTrack) localStream.addTrack(micTrack);
+  }
+  const oldVideos = localStream.getVideoTracks();
+  // Attention: on ne stoppe les anciennes pistes qu'après succès
+  oldVideos.forEach(t=>{ try{ localStream.removeTrack(t); }catch{} try{ t.stop(); }catch{} });
+  localStream.addTrack(newVideo);
+  localV.srcObject = localStream;
+
+  // on peut arrêter les autres tracks du stream temporaire, sauf la nouvelle déjà copiée
+  try{ attempt.stream.getTracks().forEach(t=>{ if(t !== newVideo && t.readyState==='live') t.stop(); }); }catch{}
+
+  facingMode = targetFacing;
+  subRole.textContent = (targetFacing==='environment' ? 'Caméra arrière' : 'Caméra frontale');
+}
 
     async function startShare(){
       try{
@@ -421,15 +449,17 @@
 
     // --- Buttons ---
     btnToggleAudio.onclick = ()=>{ audioEnabled=!audioEnabled; updateLocalMic(); };
-    btnRotate.onclick = async ()=>{
-      // si un partage d'écran PC est actif, on le coupe avant de revenir caméra
-      if(isSharing){ try{ await startShare(); }catch{} }
-      try{
-        await switchCamera();
-      }catch(e){
-        toast('Impossible d’inverser la caméra', 'error');
-      }
-    };
+ btnRotate.onclick = async ()=>{
+  if(isSharing){ // si on partage l'écran côté PC, on le coupe d'abord
+    try{ await startShare(); }catch{}
+  }
+  try{
+    await switchCamera();
+  }catch(e){
+    toast('Impossible d’inverser la caméra', 'error');
+  }
+};
+
     btnShareScreen.onclick = ()=> startShare();
     btnShot.onclick = async ()=>{ const cvs = await html2canvas(document.querySelector('.video-area')); const a=document.createElement('a'); a.href=cvs.toDataURL('image/png'); a.download='screenshot.png'; a.click(); };
     btnRotateScreen.onclick = ()=>{ document.getElementById('video-area').classList.toggle('rotate90'); };
