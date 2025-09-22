@@ -43,11 +43,6 @@
 
     .video-area{position:relative;aspect-ratio:16/9;background:#0b0e14;display:grid;place-items:center;overflow:hidden;}
     video{width:100%;height:100%;object-fit:cover;background:#000;}
-    .grid{display:grid;gap:8px;width:100%;height:100%;}
-    .grid.cols-1{grid-template-columns:1fr}
-    .grid.cols-2{grid-template-columns:1fr 1fr}
-    .grid.cols-3{grid-template-columns:1fr 1fr 1fr}
-    .grid.cols-4{grid-template-columns:1fr 1fr; grid-auto-rows:1fr}
 
     .vid-badges{position:absolute;top:10px;left:10px;display:flex;gap:8px;z-index:3;}
     .chip{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;font-size:12px;border:1px solid var(--border);background:rgba(0,0,0,.35);}
@@ -82,6 +77,25 @@
     @media (min-width:980px){ .dock{display:none;} }
 
     .hidden{display:none !important;}
+
+    /* ---- Vignettes cliquables ---- */
+    .thumbs{
+      position:absolute; left:12px; right:12px; bottom:12px;
+      display:flex; gap:8px; padding:8px;
+      background:rgba(0,0,0,.28); border:1px solid var(--border);
+      border-radius:12px; overflow:auto; z-index:5;
+    }
+    .thumb{
+      position:relative; width:140px; aspect-ratio:16/9;
+      border:1px solid var(--border); border-radius:10px; overflow:hidden; cursor:pointer;
+      box-shadow:var(--shadow); flex:0 0 auto; outline:2px solid transparent; outline-offset:0;
+    }
+    .thumb.active{ outline-color: var(--brand-2); }
+    .thumb video{ width:100%; height:100%; object-fit:cover; background:#000; }
+    .thumb .name{
+      position:absolute; left:6px; bottom:6px; font-size:12px; padding:2px 6px;
+      border-radius:999px; background:rgba(0,0,0,.45); border:1px solid var(--border);
+    }
   </style>
 </head>
 <body>
@@ -118,13 +132,16 @@
           <span class="chip" id="sharing-chip" style="display:none">🖥️ Partage d’écran</span>
         </div>
 
-        <!-- Grille multi-vidéos -->
-        <div id="remote-grid" class="grid cols-1"></div>
+        <!-- Grand canvas (le participant sélectionné) -->
+        <video id="main-video" autoplay playsinline muted></video>
 
-        <!-- vignette locale -->
-        <div class="local-thumb" id="local-thumb" title="Cliquer pour échanger les vues (PIP)">
+        <!-- Vignette locale (PIP) -->
+        <div class="local-thumb" id="local-thumb" title="Aperçu local (muet)">
           <video id="local-video" autoplay muted playsinline></video>
         </div>
+
+        <!-- Rangée de vignettes cliquables -->
+        <div id="thumbs" class="thumbs"></div>
       </div>
 
       <div class="controls" id="controls">
@@ -182,7 +199,8 @@
   <script>
   document.addEventListener('DOMContentLoaded', () => {
     // ==== DOM ====
-    const remoteGrid = document.getElementById('remote-grid');
+    const mainV   = document.getElementById('main-video');
+    const thumbs  = document.getElementById('thumbs');
     const localV  = document.getElementById('local-video');
     const localThumb = document.getElementById('local-thumb');
 
@@ -246,10 +264,23 @@
     let localStream=null, micTrack=null, camTrack=null;
     let audioEnabled=true;
 
-    // multi-participants
-    const mediaConns = new Map();   // peerId -> MediaConnection
-    const dataConns  = new Map();   // peerId -> DataConnection
-    const remoteVideos = new Map(); // peerId -> <video>
+    // Multi-participants & anti-doublons
+    const SELF_UUID = (() => {
+      let u = localStorage.getItem('client_uuid');
+      if(!u){
+        u = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random()));
+        localStorage.setItem('client_uuid', u);
+      }
+      return u;
+    })();
+
+    const mediaConns = new Map();    // peerId -> MediaConnection
+    const dataConns  = new Map();    // peerId -> DataConnection
+    const remoteVideos = new Map();  // peerId -> <video> (vignette)
+    const remoteAudios = new Map();  // peerId -> <audio> (audio réel)
+    const peerIdByUuid = new Map();  // uuid -> peerId courant
+    const lastSeen = new Map();      // peerId -> timestamp (pong vu)
+    let currentMainPeerId = null;
 
     // Rôle via URL
     const url = new URL(window.location.href);
@@ -270,7 +301,6 @@
         micSelect.innerHTML = mics.map(d=>`<option value="${d.deviceId}">${d.label||'Micro'}</option>`).join('') || '<option>—</option>';
         camSelect.innerHTML = cams.map(d=>`<option value="${d.deviceId}">${d.label||'Caméra'}</option>`).join('') || '<option>—</option>';
 
-        // Speaker selection only where supported
         if (typeof HTMLMediaElement.prototype.setSinkId === 'function' && spks.length){
           spkSelect.innerHTML = spks.map(d=>`<option value="${d.deviceId}">${d.label||'Haut-parleur'}</option>`).join('');
           spkSelect.disabled = false;
@@ -279,7 +309,6 @@
           spkSelect.disabled = true;
         }
 
-        // Pré-sélection arrière sur mobile si possible
         if (isMobile()){
           const back = cams.find(c => /back|rear|environment/i.test(c.label));
           if(back){ camSelect.value = back.deviceId; }
@@ -302,9 +331,11 @@
     // ==== Media acquisition ====
     async function startCamera(initial=false){
       const wantBackOnMobile = isMobile() && initial;
-      let constraints = { video: wantBackOnMobile ? { facingMode: { ideal:'environment' } } : { facingMode: { ideal:'user' } }, audio: true };
+      let constraints = {
+        video: wantBackOnMobile ? { facingMode: { ideal:'environment' } } : { facingMode: { ideal:'user' } },
+        audio: { echoCancellation:true, noiseSuppression:true, autoGainControl:true }
+      };
 
-      // si liste de cams connue, respecter camSelect si choisi
       if (camSelect.value) constraints.video = { deviceId: { exact: camSelect.value } };
 
       try{
@@ -315,7 +346,6 @@
         if (!localStream){
           localStream = new MediaStream();
         } else {
-          // retire anciennes pistes
           localStream.getTracks().forEach(t=>localStream.removeTrack(t));
         }
         if (camTrack) localStream.addTrack(camTrack);
@@ -324,7 +354,6 @@
         localV.srcObject = localStream;
         localV.muted = true;
 
-        // push to RTCRtpSender if connected
         for (const [, mc] of mediaConns){
           const v = camTrack, a = micTrack;
           if (v) await replaceOutgoing(mc, 'video', v);
@@ -339,20 +368,17 @@
     }
 
     async function switchCamera(){
-      // essaye par deviceId (select) prioritaire
       let targetDeviceId = null;
       if (camSelect.value) {
-        // bascule entre arrière/avant si possible
         const currentLabel = camSelect.selectedOptions[0]?.textContent?.toLowerCase() || '';
         const want = /(back|rear|environment)/.test(currentLabel) ? 'user' : 'environment';
         targetDeviceId = await getDeviceIdForFacing(want);
-        if (!targetDeviceId) targetDeviceId = camSelect.value; // fallback same
+        if (!targetDeviceId) targetDeviceId = camSelect.value;
       } else {
         const want = (camTrack && camTrack.getSettings().facingMode === 'environment') ? 'user' : 'environment';
         targetDeviceId = await getDeviceIdForFacing(want);
       }
 
-      // build constraints cascade
       async function tryGUM(v){
         try{
           const s = await navigator.mediaDevices.getUserMedia({ video:v, audio:false });
@@ -370,44 +396,37 @@
       }
       if (!attempt){ toast('Impossible d’inverser la caméra (contrainte refusée).', 'error'); return; }
 
-      // replace video track only (keep mic)
       camTrack = attempt.vt;
 
-      // preview local
       const prevAudios = localStream.getAudioTracks();
       localStream = new MediaStream([camTrack, ...prevAudios]);
       localV.srcObject = localStream;
 
-      // senders
       for (const [, mc] of mediaConns){
         await replaceOutgoing(mc, 'video', camTrack);
       }
 
-      // update selector
       await populateDeviceLists();
       if (targetDeviceId) camSelect.value = targetDeviceId;
 
       const f = camTrack.getSettings().facingMode || '';
       subRole.textContent = /environment/i.test(f) ? 'Caméra arrière' : 'Caméra frontale';
 
-      // stop temp tracks we didn’t keep
       attempt.s.getTracks().forEach(t=>{ if (t !== camTrack) try{t.stop()}catch{} });
     }
 
     async function changeMic(deviceId){
       try{
-        const s = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: deviceId } }, video:false });
+        const s = await navigator.mediaDevices.getUserMedia({ audio: { deviceId: { exact: deviceId }, echoCancellation:true, noiseSuppression:true, autoGainControl:true }, video:false });
         const newMic = s.getAudioTracks()[0];
         if (!newMic){ s.getTracks().forEach(t=>t.stop()); return; }
 
-        // replace in local stream
         const vids = localStream.getVideoTracks();
         if (micTrack){ try{ micTrack.stop(); }catch{} }
         micTrack = newMic;
         localStream = new MediaStream([...vids, micTrack]);
         localV.srcObject = localStream;
 
-        // replace in all senders
         for (const [, mc] of mediaConns){
           await replaceOutgoing(mc, 'audio', micTrack);
         }
@@ -415,10 +434,9 @@
     }
 
     async function changeSpeaker(deviceId){
-      // apply to all remote videos that support setSinkId
-      for (const [, video] of remoteVideos){
-        if (typeof video.sinkId === 'string' || typeof video.setSinkId === 'function'){
-          try{ await video.setSinkId(deviceId); }catch(e){ /* ignore */ }
+      for (const [, audio] of remoteAudios){
+        if (typeof audio.setSinkId === 'function'){
+          try{ await audio.setSinkId(deviceId); }catch(e){ /* ignore */ }
         }
       }
     }
@@ -440,7 +458,7 @@
       }catch(e){ toast('Changement de caméra impossible : '+e.message,'error'); }
     }
 
-    // ==== Screen share (PC only) : replace VIDEO track only ====
+    // ==== Screen share : remplace uniquement la vidéo ====
     async function startShare(){
       if (isMobile()){
         toast('Le partage d’écran est disponible uniquement sur ordinateur.', 'warn');
@@ -448,11 +466,8 @@
       }
       try{
         if (isSharing){
-          // stop share -> back to camera
           isSharing=false; sharingChip.style.display='none';
           btnShareScreen.textContent='🖥️ Partager écran'; mShare.textContent='🖥️';
-
-          // restore camera video
           await startCamera(false);
           return;
         }
@@ -462,12 +477,10 @@
         const v = disp.getVideoTracks()[0];
         if (!v){ toast('Aucune piste vidéo de partage','error'); return; }
 
-        // Replace only VIDEO sender (keep micTrack as is)
         displayVideoTrack = v;
         sharingChip.style.display='inline-flex';
         isSharing=true; btnShareScreen.textContent='⛔ Arrêter partage'; mShare.textContent='⛔';
 
-        // Preview local = vidéo partage + audio local (non nécessaire en preview)
         const auds = localStream.getAudioTracks();
         localStream = new MediaStream([displayVideoTrack, ...auds]);
         localV.srcObject = localStream;
@@ -476,7 +489,6 @@
           await replaceOutgoing(mc, 'video', displayVideoTrack);
         }
 
-        // when user stops sharing via browser UI
         displayVideoTrack.addEventListener('ended', async ()=>{
           isSharing=false; sharingChip.style.display='none';
           btnShareScreen.textContent='🖥️ Partager écran'; mShare.textContent='🖥️';
@@ -494,53 +506,107 @@
       if (sender){ await sender.replaceTrack(track); }
     }
 
-    function monitorRemoteMic(stream, videoEl){
+    function monitorRemoteMic(stream, peerId){
       const a = stream.getAudioTracks()[0];
       if(!a) return;
       const set = (on) => {
         remoteMicStatus.textContent = on ? 'Micro distant : activé' : 'Micro distant : coupé';
         remoteMicChip.textContent = (on ? '🎤 ' : '🔇 ') + 'Micro';
-        videoEl.dataset.mic = on ? 'on' : 'off';
       };
       set(a.enabled); a.onmute=()=>set(false); a.onunmute=()=>set(true);
     }
 
-    // ==== Remote video management (multi-participants) ====
-    function ensureGridCols(){
-      const n = remoteVideos.size || 1;
-      remoteGrid.className = 'grid ' + (n<=1?'cols-1': n===2?'cols-2': n===3?'cols-3':'cols-4');
+    // ==== Audio & vignettes ====
+    function addRemoteAudio(peerId, stream){
+      let a = remoteAudios.get(peerId);
+      if(!a){
+        a = document.createElement('audio');
+        a.autoplay = true;
+        a.controls = false;
+        a.style.display = 'none';
+        document.body.appendChild(a);
+        remoteAudios.set(peerId, a);
+      }
+      a.srcObject = stream;
+      a.muted = false;
+      a.play().catch(()=>{});
+      lastSeen.set(peerId, Date.now());
     }
 
-    function addRemoteVideo(peerId, stream){
-      let v = remoteVideos.get(peerId);
-      if (!v){
-        v = document.createElement('video');
+    function buildThumb(peerId, stream, label='Participant'){
+      let wrap = document.getElementById('thumb-'+peerId);
+      if(!wrap){
+        wrap = document.createElement('div');
+        wrap.className = 'thumb';
+        wrap.id = 'thumb-'+peerId;
+
+        const v = document.createElement('video');
         v.autoplay = true; v.playsInline = true; v.controls = false;
+        v.muted = true; // vignette muette
         v.id = 'remote-'+peerId;
-        remoteGrid.appendChild(v);
+
+        const name = document.createElement('div');
+        name.className = 'name'; name.textContent = label;
+
+        wrap.appendChild(v);
+        wrap.appendChild(name);
+        thumbs.appendChild(wrap);
+
         remoteVideos.set(peerId, v);
-        ensureGridCols();
-      }
-      v.srcObject = stream;
-      v.muted = false;
 
-      // mobile autoplay unlock helper
-      if (isMobile()){
-        const b=document.createElement('button'); b.textContent='🔊 Activer le son';
-        b.style.position='fixed'; b.style.right='16px'; b.style.bottom='16px'; b.style.zIndex=80;
-        b.onclick=()=>{ v.muted=false; v.play().catch(()=>{}); b.remove(); };
-        document.body.appendChild(b);
+        wrap.addEventListener('click', ()=> setMain(peerId));
       }
-      monitorRemoteMic(stream, v);
-      v.play().catch(()=>{});
+
+      const vid = remoteVideos.get(peerId);
+      vid.srcObject = stream;
+      vid.play().catch(()=>{});
     }
 
-    function removeRemoteVideo(peerId){
+    function setMain(peerId){
+      if(peerId === currentMainPeerId) return;
       const v = remoteVideos.get(peerId);
-      if (v){ try{ v.srcObject=null; v.remove(); }catch{} remoteVideos.delete(peerId); ensureGridCols(); }
+      if(!v || !v.srcObject) return;
+
+      mainV.srcObject = v.srcObject;
+      mainV.muted = true;
+      mainV.play().catch(()=>{});
+
+      document.querySelectorAll('.thumb').forEach(t=>t.classList.remove('active'));
+      const active = document.getElementById('thumb-'+peerId);
+      if(active) active.classList.add('active');
+
+      currentMainPeerId = peerId;
     }
 
-    // ==== Chat (broadcast to all dataConns) ====
+    function removePeerCompletely(peerId){
+      // audio
+      const a = remoteAudios.get(peerId);
+      if(a){ try{ a.srcObject=null; a.remove(); }catch{} remoteAudios.delete(peerId); }
+
+      // vignette vidéo
+      const v = remoteVideos.get(peerId);
+      if(v){ try{ v.srcObject=null; }catch{}; remoteVideos.delete(peerId); }
+      const wrap = document.getElementById('thumb-'+peerId);
+      if(wrap){ wrap.remove(); }
+
+      // connexions
+      const mc = mediaConns.get(peerId); if(mc){ try{ mc.close(); }catch{} mediaConns.delete(peerId); }
+      const dc = dataConns.get(peerId);  if(dc){ try{ dc.close(); }catch{} dataConns.delete(peerId); }
+
+      if(currentMainPeerId === peerId){
+        currentMainPeerId = null;
+        const next = [...remoteVideos.keys()][0];
+        if(next) setMain(next); else { mainV.srcObject = null; }
+      }
+
+      lastSeen.delete(peerId);
+      // purge éventuelle dans peerIdByUuid (si connu)
+      for (const [uuid, pid] of peerIdByUuid){
+        if (pid === peerId) peerIdByUuid.delete(uuid);
+      }
+    }
+
+    // ==== Chat ====
     btnSend.onclick = ()=>{
       const t = msgInput.value.trim(); if(!t) return;
       for (const [, dc] of dataConns){ if (dc.open) dc.send({type:'chat', text:t}); }
@@ -560,10 +626,17 @@
     btnJoin.onclick = ()=> initCall(hostId);
 
     // ==== Buttons ====
-    btnToggleAudio.onclick = ()=>{ audioEnabled = !audioEnabled; if(micTrack){ micTrack.enabled = audioEnabled; } btnToggleAudio.textContent = audioEnabled? '🔇 Couper micro':'🎤 Activer micro'; };
+    btnToggleAudio.onclick = ()=>{
+      audioEnabled = !audioEnabled;
+      if(micTrack){ micTrack.enabled = audioEnabled; }
+      btnToggleAudio.textContent = audioEnabled? '🔇 Couper micro':'🎤 Activer micro';
+    };
     btnRotate.onclick = ()=> switchCamera();
     btnShareScreen.onclick = ()=> startShare();
-    btnShot.onclick = async ()=>{ const cvs = await html2canvas(document.querySelector('.video-area')); const a=document.createElement('a'); a.href=cvs.toDataURL('image/png'); a.download='screenshot.png'; a.click(); };
+    btnShot.onclick = async ()=>{
+      const cvs = await html2canvas(document.querySelector('.video-area'));
+      const a=document.createElement('a'); a.href=cvs.toDataURL('image/png'); a.download='screenshot.png'; a.click();
+    };
     btnFullscreen.onclick = ()=>{ const el=document.getElementById('video-area'); (el.requestFullscreen||el.webkitRequestFullscreen||el.msRequestFullscreen||(()=>{})).call(el); };
 
     // Dock mirrors
@@ -591,14 +664,12 @@
         btnInvite.style.display='inline-block';
       }
 
-      // start camera with defaults (rear on mobile)
       await startCamera(true);
       await populateDeviceLists();
 
       if (isClient && hostId){ initCall(hostId); }
     });
 
-    // Host / Client data channel logic for mesh
     function broadcastPeersList(){
       const ids = Array.from(mediaConns.keys()).concat([peer.id]).filter(Boolean);
       for (const [, dc] of dataConns){ if (dc.open) dc.send({type:'peers', ids}); }
@@ -608,30 +679,29 @@
       dataConns.set(dc.peer, dc);
       dc.on('open', ()=>{
         connStatus.textContent='Connecté'; setConn('ok'); ding.play().catch(()=>{});
-        // send my id & ask for list
-        dc.send({type:'hello', id: peer.id});
-        // host broadcasts full list to everyone
+        dc.send({type:'hello', id: peer.id, uuid: SELF_UUID, label: isClient ? 'Client' : 'Technicien'});
         broadcastPeersList();
       });
-      dc.on('close', ()=>{ dataConns.delete(dc.peer); setConn('warn'); removeRemoteVideo(dc.peer); });
+      dc.on('close', ()=>{ removePeerCompletely(dc.peer); setConn('warn'); });
       dc.on('error', e=>toast('Erreur data: '+e,'error'));
-      dc.on('data', async payload=>{
-        if (typeof payload === 'string'){
-          appendMsg(dc.peer, payload);
-          return;
-        }
+      dc.on('data', payload=>{
+        if (typeof payload === 'string'){ appendMsg(dc.peer, payload); return; }
         if (payload?.type === 'chat'){ appendMsg(dc.peer, payload.text); }
         if (payload?.type === 'peers' && isClient){
-          // call each peer in the list (except me & except already connected)
           const ids = (payload.ids||[]).filter(pid => pid && pid !== peer.id && !mediaConns.has(pid));
           for (const pid of ids){ callPeer(pid); }
         }
-        if (payload?.type === 'hello' && !isClient){
-          // host sends the full list back to newcomer
-          broadcastPeersList();
+        if (payload?.type === 'hello'){
+          if (payload.uuid){
+            const existing = peerIdByUuid.get(payload.uuid);
+            if (existing && existing !== dc.peer){
+              removePeerCompletely(existing);
+            }
+            peerIdByUuid.set(payload.uuid, dc.peer);
+          }
         }
         if (payload?.type === 'ping'){ dc.send({type:'pong', time:payload.time}); }
-        if (payload?.type === 'pong'){ updatePing(Date.now()-payload.time); }
+        if (payload?.type === 'pong'){ updatePing(Date.now()-payload.time); lastSeen.set(dc.peer, Date.now()); }
       });
     }
 
@@ -639,11 +709,16 @@
 
     function setupMediaConn(mc){
       mediaConns.set(mc.peer, mc);
-      mc.on('stream', stream => addRemoteVideo(mc.peer, stream));
-      mc.on('close', ()=>{ mediaConns.delete(mc.peer); removeRemoteVideo(mc.peer); setConn('warn'); });
+      mc.on('stream', stream => {
+        buildThumb(mc.peer, stream, 'Participant');
+        addRemoteAudio(mc.peer, stream);
+        monitorRemoteMic(stream, mc.peer);
+        lastSeen.set(mc.peer, Date.now());
+        if(!currentMainPeerId) setMain(mc.peer);
+      });
+      mc.on('close', ()=>{ removePeerCompletely(mc.peer); setConn('warn'); });
       mc.on('error', e=> toast('Erreur appel: '+e,'error'));
 
-      // ICE state (diagnostic)
       mc.peerConnection?.addEventListener('iceconnectionstatechange', ()=>{
         const s = mc.peerConnection.iceConnectionState;
         if(s==='failed' || s==='disconnected'){ setConn('bad'); }
@@ -653,7 +728,14 @@
 
     peer.on('call', async inc=>{
       if(!localStream) await startCamera(false);
-      inc.answer(localStream, { metadata:{ audio:true, video:true } });
+      if (inc.metadata?.uuid){
+        const existing = peerIdByUuid.get(inc.metadata.uuid);
+        if (existing && existing !== inc.peer){
+          removePeerCompletely(existing);
+        }
+        peerIdByUuid.set(inc.metadata.uuid, inc.peer);
+      }
+      inc.answer(localStream, { metadata:{ uuid: SELF_UUID, label: isClient ? 'Client' : 'Technicien' } });
       setupMediaConn(inc);
     });
 
@@ -663,7 +745,7 @@
     // ==== Init calls ====
     async function callPeer(remoteId){
       if (!peer.open || !remoteId) return;
-      const mc = peer.call(remoteId, localStream);
+      const mc = peer.call(remoteId, localStream, { metadata:{ uuid: SELF_UUID, label: isClient ? 'Client' : 'Technicien' } });
       setupMediaConn(mc);
       const dc = peer.connect(remoteId);
       setupDataConn(dc);
@@ -675,28 +757,35 @@
       if(!localStream) await startCamera(false);
 
       isCalling = true;
-
-      // call host
       await callPeer(remoteId);
 
-      // guard timeout (soft)
       setTimeout(()=>{ isCalling=false; }, 4000);
       connStatus.textContent='Connexion…';
     }
 
-    // ==== Pings ====
-    setInterval(()=>{ for (const [, dc] of dataConns){ if(dc.open) dc.send({type:'ping', time:Date.now()}); } }, 3000);
+    // ==== Pings + purge anti-fantômes ====
+    setInterval(()=>{
+      const now = Date.now();
+      for (const [id, dc] of dataConns){
+        if (dc.open){ dc.send({type:'ping', time:now}); }
+      }
+      for (const [peerId, t] of lastSeen){
+        if (now - t > 12000){
+          removePeerCompletely(peerId);
+        }
+      }
+    }, 3000);
 
-    // ==== PIP swap (local <-> first remote) ====
+    // ==== PIP local : on peut mettre sa propre vue en grand si voulu ====
     localThumb.addEventListener('click', ()=>{
-      // swap avec le premier remote si présent
-      const firstRemote = remoteGrid.querySelector('video');
-      if (!firstRemote) return;
-      const a = firstRemote.srcObject, b = localV.srcObject;
-      firstRemote.srcObject = b; localV.srcObject = a;
+      mainV.srcObject = localV.srcObject;
+      mainV.muted = true;
+      mainV.play().catch(()=>{});
+      document.querySelectorAll('.thumb').forEach(t=>t.classList.remove('active'));
+      currentMainPeerId = null; // aucun remote sélectionné
     });
 
-    // ==== Speaker select initial hint ====
+    // ==== Speaker select hint ====
     if (!(typeof HTMLMediaElement.prototype.setSinkId === 'function')){
       spkSelect.title = 'Changement de sortie non supporté par ce navigateur';
     }
