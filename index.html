@@ -237,9 +237,19 @@
     const ding = new Audio('https://www.soundjay.com/buttons/sounds/button-3.mp3');
 
     // --- State ---
-    let peer = new Peer({});
-    let dataConn=null, mediaConn=null;
-    let peerReady=false;
+    const ICE_SERVERS = [
+      { urls: ['stun:stun.l.google.com:19302','stun:global.stun.twilio.com:3478'] },
+      // Fallback TURN publics (pour tests). Remplace par ton propre TURN en prod.
+      { urls: 'turn:openrelay.metered.ca:80',  username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
+      { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
+    ];
+    let peer = new Peer({
+      debug: 2,
+      config: { iceServers: ICE_SERVERS },
+      secure: location.protocol === 'https:'
+    });
+    let dataConn=null, mediaConn=null; let peerReady=false; let isCalling=false;
     let localStream=null, micTrack=null;
     let audioEnabled = true;
     let facingMode = 'user';
@@ -340,13 +350,41 @@
         btnInvite.style.display='inline-block';
       }
       await startCamera();
-      // Auto-join côté client pour éviter l'oubli du bouton "Rejoindre"
-      if(isClient && hostId){ setTimeout(()=> initCall(hostId), 300); }
+      // Auto-join côté client : uniquement après caméra prête
+      if(isClient && hostId){ initCall(hostId); }
     });
 
-    peer.on('call', async inc =>{ mediaConn=inc; if(!localStream) await startCamera(); mediaConn.answer(localStream, { metadata:{ audio:true, video:true }}); mediaConn.on('stream', onRemoteStream); mediaConn.on('error', e=>toast('Erreur appel: '+e,'error')); });
-    peer.on('connection', c=>{ dataConn=c; dataConn.on('open', ()=>{ connStatus.textContent='Connecté'; setConn('ok'); ding.play().catch(()=>{}); }); dataConn.on('error', e=>toast('Erreur data: '+e,'error')); dataConn.on('data', onConnData); });
-    peer.on('disconnected', ()=>{ toast('Connexion perdue. Reconnexion…','warn'); peer.reconnect(); setConn('warn'); });
+    // Réception d'un appel (glare-safe)
+    peer.on('call', async inc =>{
+      // Si on a déjà un appel sortant en cours côté client, on rejette pour éviter le glare
+      if(isClient && isCalling){ try{ inc.close(); }catch{} return; }
+      mediaConn = inc;
+      if(!localStream) await startCamera();
+      mediaConn.answer(localStream, { metadata:{ audio:true, video:true } });
+      mediaConn.on('stream', onRemoteStream);
+      mediaConn.on('error', e=>toast('Erreur appel: '+e,'error'));
+      mediaConn.on('close', ()=>{ setConn('warn'); subRole.textContent='Appel terminé'; isCalling=false; });
+      mediaConn.peerConnection?.addEventListener('iceconnectionstatechange', ()=>{
+        const s = mediaConn.peerConnection.iceConnectionState;
+        if(s==='failed' || s==='disconnected'){ setConn('bad'); }
+        if(s==='connected'){ setConn('ok'); }
+      });
+    });
+
+    // DataChannel entrant
+    peer.on('connection', c=>{
+      dataConn=c;
+      dataConn.on('open', ()=>{ connStatus.textContent='Connecté'; setConn('ok'); ding.play().catch(()=>{}); });
+      dataConn.on('close', ()=>{ dataConn=null; setConn('warn'); });
+      dataConn.on('error', e=>toast('Erreur data: '+e,'error'));
+      dataConn.on('data', onConnData);
+    });
+
+    peer.on('disconnected', ()=>{
+      toast('Connexion au serveur de signalisation perdue. Reconnexion…','warn');
+      peer.reconnect();
+      setConn('warn');
+    });
     peer.on('error', err=>{ console.error(err); toast('Peer error: '+err.type,'error'); setConn('bad'); });
 
     function onConnData(d){ if(typeof d==='string'){ appendMsg(isClient?'Technicien':'Client', d); }
@@ -354,12 +392,49 @@
       if(d?.type==='pong'){ updatePing(Date.now()-d.time); }
     }
 
-    async function initCall(remoteId){ if(!remoteId || !peer.open){ toast('ID invalide ou Peer non connecté','error'); return; } if(!localStream) await startCamera();
-      mediaConn = peer.call(remoteId, localStream); dataConn = peer.connect(remoteId);
-      let guard=setTimeout(()=>{ if(!dataConn?.open && !mediaConn?.open){ toast('Temps de connexion dépassé','error'); connStatus.textContent='Connexion échouée'; setConn('bad'); peer.disconnect(); } }, 12000);
-      mediaConn.on('stream', onRemoteStream); mediaConn.on('error', e=>toast('Erreur appel: '+e,'error'));
+    async function initCall(remoteId){
+      if(isCalling){ toast('Connexion déjà en cours…','warn'); return; }
+      if(!remoteId || !peer.open){ toast('ID invalide ou Peer non connecté','error'); return; }
+      if(!localStream) await startCamera();
+
+      // Nettoie un ancien appel éventuel
+      if(mediaConn){ try{ mediaConn.close(); }catch{} }
+      if(dataConn){ try{ dataConn.close(); }catch{} }
+
+      isCalling = true;
+      mediaConn = peer.call(remoteId, localStream, { metadata:{role: isClient?'caller':'callee'} });
+      dataConn  = peer.connect(remoteId);
+
+      // Timeout plus doux : on ne « disconnect » plus le peer, on propose de réessayer
+      let guard = setTimeout(()=>{
+        if(!dataConn?.open && !mediaConn?.open){
+          toast('Temps de connexion dépassé','error');
+          connStatus.textContent='Connexion à l’host impossible';
+          setConn('bad');
+          btnJoin.style.display = isClient ? 'inline-block' : 'none';
+          isCalling=false;
+        }
+      }, 12000);
+
+      mediaConn.on('stream', onRemoteStream);
+      mediaConn.on('close', ()=>{ setConn('warn'); subRole.textContent='Appel terminé'; isCalling=false; });
+      mediaConn.on('error', e=>{ toast('Erreur appel: '+e,'error'); isCalling=false; });
+
+      // Diagnostics ICE
+      mediaConn.peerConnection?.addEventListener('iceconnectionstatechange', ()=>{
+        const s = mediaConn.peerConnection.iceConnectionState;
+        if(s==='failed' || s==='disconnected'){ setConn('bad'); }
+        if(s==='connected'){ setConn('ok'); }
+      });
+      mediaConn.peerConnection?.addEventListener('connectionstatechange', ()=>{
+        const s = mediaConn.peerConnection.connectionState;
+        if(s==='failed' || s==='disconnected'){ setConn('bad'); }
+      });
+
       dataConn.on('open', ()=>{ clearTimeout(guard); inviteField.style.display='none'; connStatus.textContent='Connecté'; setConn('ok'); ding.play().catch(()=>{}); });
-      dataConn.on('data', onConnData); dataConn.on('error', e=>toast('Erreur data: '+e,'error'));
+      dataConn.on('data', onConnData);
+      dataConn.on('error', e=> toast('Erreur data: '+e,'error'));
+      dataConn.on('close', ()=>{ setConn('warn'); });
     }
 
     // Pings
