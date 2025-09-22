@@ -48,7 +48,7 @@
     .role{ font-size:12px; color:var(--muted); }
 
     .video-area{ position:relative; aspect-ratio: 16 / 9; background:#0b0e14; display:grid; place-items:center; overflow:hidden; }
-        .video-area.rotate90 video{ transform: rotate(90deg); object-fit:contain; }
+    .video-area.rotate90 video{ transform: rotate(90deg); object-fit:contain; }
     video{ width:100%; height:100%; object-fit:cover; background:#000; }
 
     /* Badges on videos */
@@ -100,7 +100,7 @@
   <header class="topbar" role="banner">
     <div class="topbar-inner" aria-live="polite">
       <div class="brand" title="MECASONIC Support Vidéo">
-        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12a8 8 0 1 1 16 0" stroke="currentColor" stroke-width="2"/><path d="M12 4v8l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12a 8 8 0 1 1 16 0" stroke="currentColor" stroke-width="2"/><path d="M12 4v8l4 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
         MECASONIC
         <span class="badge">Support vidéo</span>
       </div>
@@ -108,9 +108,9 @@
         <span id="conn-dot" class="dot idle" aria-hidden="true"></span>
         <span id="connection-status">En attente…</span>
         <span aria-hidden="true">•</span>
-        <span id="latency">Ping : …</span>
+        <span id="latency">Ping : …</span>
         <span aria-hidden="true">•</span>
-        <span id="remote-mic-status">Micro distant : inconnu</span>
+        <span id="remote-mic-status">Micro distant : inconnu</span>
       </div>
     </div>
   </header>
@@ -234,9 +234,24 @@
     const toasts = document.getElementById('toasts');
     function toast(txt, type=''){ const t=document.createElement('div'); t.className='toast'+(type?(' '+type):''); t.textContent=txt; toasts.appendChild(t); setTimeout(()=>t.remove(), 3200); }
     function setConn(state){ connDot.className = 'dot '+state; }
-    function updatePing(ms){ latencyEl.textContent = `Ping : ${ms} ms`; setConn(ms<100?'ok': ms<220?'warn':'bad'); }
-    function appendMsg(from, txt){ const el=document.createElement('div'); el.className='msg'; el.textContent = `${from} : ${txt}`; messages.appendChild(el); messages.scrollTop = messages.scrollHeight; }
+    function updatePing(ms){ latencyEl.textContent = `Ping : ${ms} ms`; setConn(ms<100?'ok': ms<220?'warn':'bad'); }
+    function appendMsg(from, txt){ const el=document.createElement('div'); el.className='msg'; el.textContent = `${from} : ${txt}`; messages.appendChild(el); messages.scrollTop = messages.scrollHeight; }
     function isMobile(){ return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent); }
+
+    // Helper: trouver un deviceId selon la face demandée
+    async function getDeviceIdForFacing(target){ // 'user' | 'environment'
+      try{
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const vids = devices.filter(d=>d.kind==='videoinput');
+        if(!vids.length || !vids.some(v=>v.label)) return null; // labels indisponibles (iOS avant permission)
+        const match = vids.find(v=>{
+          const L = v.label.toLowerCase();
+          return target==='environment' ? /(back|rear|environment)/.test(L)
+                                        : /(front|user|facetime)/.test(L);
+        });
+        return match ? match.deviceId : null;
+      }catch{ return null; }
+    }
 
     // --- Sounds ---
     const ding = new Audio('https://www.soundjay.com/buttons/sounds/button-3.mp3');
@@ -244,7 +259,7 @@
     // --- State ---
     const ICE_SERVERS = [
       { urls: ['stun:stun.l.google.com:19302','stun:global.stun.twilio.com:3478'] },
-      // Fallback TURN publics (pour tests). Remplace par ton propre TURN en prod.
+      // Fallback TURN publics (tests). Remplace par ton propre TURN en prod.
       { urls: 'turn:openrelay.metered.ca:80',  username: 'openrelayproject', credential: 'openrelayproject' },
       { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
       { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
@@ -282,11 +297,57 @@
           const a=micTrack; if(a) await replaceOutgoing('audio', a);
         }
         subRole.textContent = 'Caméra prête';
-      }catch(e){ toast('Accès caméra/micro refusé','error'); statusText.textContent = 'Erreur : '+e.message; }
+      }catch(e){ toast('Accès caméra/micro refusé','error'); statusText.textContent = 'Erreur : '+e.message; }
+    }
+
+    // Bascule caméra sans couper (remplace uniquement la piste vidéo)
+    async function switchCamera(){
+      const newFacing = (facingMode === 'user' ? 'environment' : 'user');
+
+      // 1) Contrainte vidéo (deviceId précis si possible, sinon facingMode)
+      const deviceId = await getDeviceIdForFacing(newFacing);
+      const videoConstraints = deviceId
+        ? { deviceId: { exact: deviceId } }
+        : { facingMode: { ideal: newFacing } };
+
+      // 2) Nouvelle piste vidéo uniquement (audio:false)
+      const tmp = await navigator.mediaDevices.getUserMedia({ video: videoConstraints, audio: false });
+      const newVideo = tmp.getVideoTracks()[0];
+      if(!newVideo){ toast('Impossible d’accéder à la caméra demandée', 'error'); return; }
+
+      // 3) Remplacer la piste sortante côté RTCPeerConnection
+      if(mediaConn?.open){
+        await replaceOutgoing('video', newVideo);
+      }
+
+      // 4) Mettre à jour le preview local sans toucher au micro
+      if(!localStream){
+        localStream = new MediaStream();
+        if(micTrack) localStream.addTrack(micTrack);
+      }
+      // retirer anciennes vidéos
+      const oldVideos = localStream.getVideoTracks();
+      oldVideos.forEach(t=>{ try{ localStream.removeTrack(t); }catch{} try{ t.stop(); }catch{} });
+      // ajouter la nouvelle
+      localStream.addTrack(newVideo);
+      localV.srcObject = localStream;
+
+      // 5) on n'a plus besoin du wrapper tmp
+      try{ tmp.getTracks().forEach(t=>{ if(t.readyState==='live') t.stop(); }); }catch{}
+
+      // 6) mémoriser l'état
+      facingMode = newFacing;
+      subRole.textContent = (newFacing==='environment' ? 'Caméra arrière' : 'Caméra frontale');
     }
 
     async function startShare(){
       try{
+        // Désactivé sur mobile (UI cachée + garde-fou)
+        if(isMobile()){
+          toast('Le partage d’écran est disponible uniquement sur ordinateur.', 'warn');
+          return;
+        }
+
         if(isSharing){ // stop share -> back to camera
           isSharing=false;
           sharingChip.style.display='none';
@@ -311,26 +372,64 @@
       }catch(e){ toast('Partage d’écran annulé','warn'); }
     }
 
-    async function setLocalStream(s){ await stopStream(localStream); localStream=s; localV.srcObject=s; localV.muted=true; updateLocalMic(); }
+    async function setLocalStream(s){
+      // ATTENTION: n'arrête pas le micro si on bascule juste la vidéo via switchCamera()
+      if(localStream){
+        // si on remplace tout (startCamera/startShare), on stoppe l'ancien flux proprement
+        try{ localStream.getTracks().forEach(t=>t.stop()); }catch{}
+      }
+      localStream=s;
+      localV.srcObject=s;
+      localV.muted=true;
+      updateLocalMic();
+    }
 
-    async function replaceOutgoing(kind, track){ const sender = mediaConn?.peerConnection?.getSenders().find(s=>s.track && s.track.kind===kind); if(sender){ await sender.replaceTrack(track); } }
+    async function replaceOutgoing(kind, track){
+      const sender = mediaConn?.peerConnection?.getSenders().find(s=>s.track && s.track.kind===kind);
+      if(sender){ await sender.replaceTrack(track); }
+    }
 
-    function onRemoteStream(stream){ remoteV.pause(); remoteV.srcObject=null; remoteV.srcObject=stream; remoteV.muted=false; setTimeout(()=>remoteV.play().catch(()=>{}), 100);
+    function onRemoteStream(stream){
+      remoteV.pause();
+      remoteV.srcObject=null;
+      remoteV.srcObject=stream;
+      remoteV.muted=false;
+      setTimeout(()=>remoteV.play().catch(()=>{}), 100);
       if(isMobile()){ // unlock helper
         const b=document.createElement('button'); b.textContent='🔊 Activer le son'; b.style.position='fixed'; b.style.right='16px'; b.style.bottom='16px'; b.style.zIndex=80; b.onclick=()=>{ remoteV.muted=false; remoteV.play().catch(()=>{}); b.remove(); }; document.body.appendChild(b);
       }
       monitorRemoteMic(stream);
-      subRole.textContent='Connecté'; connStatus.textContent = 'Connecté à '+(isClient?'Technicien':'Client'); setConn('ok'); ding.play().catch(()=>{});
+      subRole.textContent='Connecté';
+      connStatus.textContent = 'Connecté à '+(isClient?'Technicien':'Client');
+      setConn('ok');
+      ding.play().catch(()=>{});
     }
 
-    function monitorRemoteMic(stream){ const a=stream.getAudioTracks()[0]; if(!a) return; const set=(on)=>{ remoteMicStatus.textContent = on?'Micro distant : activé':'Micro distant : coupé'; remoteMicChip.textContent = (on?'🎤 ':'🔇 ')+ 'Micro'; }; set(a.enabled); a.onmute=()=>set(false); a.onunmute=()=>set(true); }
+    function monitorRemoteMic(stream){
+      const a=stream.getAudioTracks()[0]; if(!a) return;
+      const set=(on)=>{ remoteMicStatus.textContent = on?'Micro distant : activé':'Micro distant : coupé'; remoteMicChip.textContent = (on?'🎤 ':'🔇 ')+ 'Micro'; };
+      set(a.enabled);
+      a.onmute=()=>set(false);
+      a.onunmute=()=>set(true);
+    }
 
     // Swap videos (PIP)
-    localThumb.addEventListener('click', ()=>{ const big=remoteV.srcObject; const small=localV.srcObject; remoteV.srcObject=small; localV.srcObject=big; });
+    localThumb.addEventListener('click', ()=>{
+      const big=remoteV.srcObject; const small=localV.srcObject;
+      remoteV.srcObject=small; localV.srcObject=big;
+    });
 
     // --- Buttons ---
     btnToggleAudio.onclick = ()=>{ audioEnabled=!audioEnabled; updateLocalMic(); };
-    btnRotate.onclick = ()=>{ facingMode = (facingMode==='user'?'environment':'user'); startCamera(); };
+    btnRotate.onclick = async ()=>{
+      // si un partage d'écran PC est actif, on le coupe avant de revenir caméra
+      if(isSharing){ try{ await startShare(); }catch{} }
+      try{
+        await switchCamera();
+      }catch(e){
+        toast('Impossible d’inverser la caméra', 'error');
+      }
+    };
     btnShareScreen.onclick = ()=> startShare();
     btnShot.onclick = async ()=>{ const cvs = await html2canvas(document.querySelector('.video-area')); const a=document.createElement('a'); a.href=cvs.toDataURL('image/png'); a.download='screenshot.png'; a.click(); };
     btnRotateScreen.onclick = ()=>{ document.getElementById('video-area').classList.toggle('rotate90'); };
@@ -343,14 +442,23 @@
     };
 
     // Mobile dock mirrors
-    mToggle.onclick = ()=>btnToggleAudio.click(); mRotate.onclick=()=>btnRotate.click(); mShare.onclick=()=>btnShareScreen.click(); mShot.onclick=()=>btnShot.click(); mRotateScreen.onclick=()=>btnRotateScreen.click();
+    mToggle.onclick = ()=>btnToggleAudio.click();
+    mRotate.onclick=()=>btnRotate.click();
+    mShare.onclick = ()=>btnShareScreen.click();
+    mShot.onclick  = ()=>btnShot.click();
+    mRotateScreen.onclick=()=>btnRotateScreen.click();
+
+    // Désactiver l'UI de partage d'écran sur mobile
+    if(isMobile()){
+      btnShareScreen.style.display = 'none';
+      mShare.style.display = 'none';
+    }
 
     // Invite / Join
     btnInvite.onclick = ()=>{
       if(!peerReady){ toast('Initialisation en cours… réessaie dans une seconde', 'warn'); return; }
       const base = location.origin + location.pathname; const link = `${base}?host=${peer.id}`;
       inviteInput.value = link; inviteField.style.display='flex';
-      // Toujours afficher le champ pour mobile (sélection longue possible)
       try{
         if(navigator.share && location.protocol === 'https:'){
           btnShare.classList.remove('hidden');
@@ -376,13 +484,11 @@
         btnInvite.style.display='inline-block';
       }
       await startCamera();
-      // Auto-join côté client : uniquement après caméra prête
       if(isClient && hostId){ initCall(hostId); }
     });
 
     // Réception d'un appel (glare-safe)
     peer.on('call', async inc =>{
-      // Si on a déjà un appel sortant en cours côté client, on rejette pour éviter le glare
       if(isClient && isCalling){ try{ inc.close(); }catch{} return; }
       mediaConn = inc;
       if(!localStream) await startCamera();
@@ -413,7 +519,8 @@
     });
     peer.on('error', err=>{ console.error(err); toast('Peer error: '+err.type,'error'); setConn('bad'); });
 
-    function onConnData(d){ if(typeof d==='string'){ appendMsg(isClient?'Technicien':'Client', d); }
+    function onConnData(d){
+      if(typeof d==='string'){ appendMsg(isClient?'Technicien':'Client', d); }
       if(d?.type==='ping' && dataConn?.open){ dataConn.send({type:'pong', time:d.time}); }
       if(d?.type==='pong'){ updatePing(Date.now()-d.time); }
     }
@@ -431,7 +538,7 @@
       mediaConn = peer.call(remoteId, localStream, { metadata:{role: isClient?'caller':'callee'} });
       dataConn  = peer.connect(remoteId);
 
-      // Timeout plus doux : on ne « disconnect » plus le peer, on propose de réessayer
+      // Timeout plus doux
       let guard = setTimeout(()=>{
         if(!dataConn?.open && !mediaConn?.open){
           toast('Temps de connexion dépassé','error');
