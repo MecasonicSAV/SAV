@@ -46,9 +46,6 @@
 
     .vid-badges{position:absolute;top:10px;left:10px;display:flex;gap:8px;z-index:3;} 
     .chip{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;font-size:12px;border:1px solid var(--border);background:rgba(0,0,0,.35);} 
-    .local-thumb{position:absolute;right:12px;bottom:12px;width:220px;max-width:35%;aspect-ratio:16/9;border:1px solid var(--border);border-radius:12px;overflow:hidden;cursor:pointer;box-shadow:var(--shadow);z-index:4;} 
-    .local-thumb video{width:100%;height:100%;object-fit:cover;} 
-    @media (max-width:720px){ .local-thumb{ width:140px; } } 
 
     /* Controls */
     .controls{display:flex;flex-wrap:wrap;gap:10px;padding:12px;border-top:1px solid var(--border);background:linear-gradient(180deg,rgba(255,255,255,.02),transparent);} 
@@ -96,15 +93,6 @@
       position:absolute; left:6px; bottom:6px; font-size:12px; padding:2px 6px;
       border-radius:999px; background:rgba(0,0,0,.45); border:1px solid var(--border);
     }
-
-    /* ====== Panneau flottant (retour vidéo local hors canvas) ====== */
-    #local-float{
-      position:fixed; left:auto; top:auto; right:16px; bottom:16px; z-index:9999;
-      width:320px; max-width:35vw; aspect-ratio:16/9;
-      border:1px solid var(--border); border-radius:12px; overflow:hidden;
-      box-shadow:var(--shadow); background:#000; cursor:move;
-    }
-    #local-float video{ width:100%; height:100%; object-fit:cover; background:#000; }
   </style>
 </head>
 <body>
@@ -144,12 +132,7 @@
         <!-- Grand canvas (le participant sélectionné) -->
         <video id="main-video" autoplay playsinline muted></video>
 
-        <!-- Vignette locale (PIP) -->
-        <div class="local-thumb" id="local-thumb" title="Aperçu local (muet)">
-          <video id="local-video" autoplay muted playsinline></video>
-        </div>
-
-        <!-- Rangée de vignettes cliquables -->
+        <!-- Rangée de vignettes cliquables (inclura aussi "Moi") -->
         <div id="thumbs" class="thumbs"></div>
       </div>
 
@@ -174,10 +157,6 @@
         <button class="btn" id="btn-rotate">↺ Inverser caméra</button>
         <button class="btn" id="btn-share-screen">🖥️ Partager écran</button>
         <button class="btn" id="btn-shot">📸 Capture</button>
-
-        <!-- === Boutons panneau flottant === -->
-        <button class="btn" id="btn-detach">📌 Sortir mon retour</button>
-        <button class="btn" id="btn-attach" style="display:none">📥 Réintégrer</button>
       </div>
     </section>
 
@@ -214,9 +193,6 @@
     // ==== DOM ====
     const mainV   = document.getElementById('main-video');
     const thumbs  = document.getElementById('thumbs');
-    const localV  = document.getElementById('local-video');
-    const localThumb = document.getElementById('local-thumb');
-    const videoArea = document.getElementById('video-area');
 
     const btnInvite = document.getElementById('btn-invite');
     const btnJoin   = document.getElementById('btn-join');
@@ -273,11 +249,9 @@
       { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
     ];
 
-    // *** PATCH: utiliser le cloud PeerJS (aucun host/port/path custom) ***
     const peer = new Peer({
       debug: 2,
       config: { iceServers: ICE_SERVERS, iceCandidatePoolSize: 1 }
-      // secure est géré automatiquement selon la page (https)
     });
 
     let peerReady=false, isCalling=false, isSharing=false, displayVideoTrack=null;
@@ -293,8 +267,8 @@
 
     const mediaConns = new Map();    // peerId -> MediaConnection
     const dataConns  = new Map();    // peerId -> DataConnection
-    const remoteVideos = new Map();  // peerId -> <video> (vignette)
-    const remoteAudios = new Map();  // peerId -> <audio> (audio réel)
+    const remoteVideos = new Map();  // peerId -> <video> (vignette) — inclura 'self'
+    const remoteAudios = new Map();  // peerId -> <audio> (jamais pour 'self')
     const peerIdByUuid = new Map();  // uuid -> peerId courant
     const lastSeen = new Map();      // peerId -> timestamp (pong vu)
     let currentMainPeerId = null;
@@ -346,6 +320,8 @@
     }
 
     // ==== Media acquisition ====
+    let selfThumbVideo = null; // <video> de notre vignette "Moi"
+
     async function startCamera(initial=false){
       const wantBackOnMobile = isMobile() && initial;
       let constraints = {
@@ -368,19 +344,57 @@
         if (camTrack) localStream.addTrack(camTrack);
         if (micTrack) localStream.addTrack(micTrack);
 
-        localV.srcObject = localStream;
-        localV.muted = true;
-
+        // met à jour tous les envois sortants
         for (const [, mc] of mediaConns){
           const v = camTrack, a = micTrack;
           if (v) await replaceOutgoing(mc, 'video', v);
           if (a) await replaceOutgoing(mc, 'audio', a);
         }
 
+        // construit/MAJ la vignette locale
+        buildSelfThumb();
+
+        // si rien en principal, affiche "Moi" par défaut
+        if (!currentMainPeerId){
+          setMain('self');
+        }
+
         subRole.textContent = wantBackOnMobile ? 'Caméra arrière' : 'Caméra prête';
       }catch(e){
         toast('Accès caméra/micro refusé : '+e.message, 'error');
         statusText.textContent = 'Erreur : '+e.message;
+      }
+    }
+
+    function buildSelfThumb(){
+      let wrap = document.getElementById('thumb-self');
+      if(!wrap){
+        wrap = document.createElement('div');
+        wrap.className = 'thumb';
+        wrap.id = 'thumb-self';
+
+        const v = document.createElement('video');
+        v.autoplay = true; v.playsInline = true; v.controls = false;
+        v.muted = true; // IMPORTANT: pas de retour son local
+        v.id = 'remote-self';
+
+        const name = document.createElement('div');
+        name.className = 'name'; name.textContent = 'Moi';
+
+        wrap.appendChild(v);
+        wrap.appendChild(name);
+        thumbs.prepend(wrap); // "Moi" en premier
+
+        remoteVideos.set('self', v);
+        selfThumbVideo = v;
+
+        wrap.addEventListener('click', ()=> setMain('self'));
+      }
+
+      // (ré)assigne le flux local à la vidéo de vignette
+      if (selfThumbVideo){
+        selfThumbVideo.srcObject = localStream;
+        selfThumbVideo.play().catch(()=>{});
       }
     }
 
@@ -417,8 +431,14 @@
 
       const prevAudios = localStream.getAudioTracks();
       localStream = new MediaStream([camTrack, ...prevAudios]);
-      localV.srcObject = localStream;
 
+      // MAJ vignette locale si elle existe
+      if (selfThumbVideo){
+        selfThumbVideo.srcObject = localStream;
+        selfThumbVideo.play().catch(()=>{});
+      }
+
+      // MAJ des envois sortants
       for (const [, mc] of mediaConns){
         await replaceOutgoing(mc, 'video', camTrack);
       }
@@ -442,8 +462,14 @@
         if (micTrack){ try{ micTrack.stop(); }catch{} }
         micTrack = newMic;
         localStream = new MediaStream([...vids, micTrack]);
-        localV.srcObject = localStream;
 
+        // MAJ vignette locale
+        if (selfThumbVideo){
+          selfThumbVideo.srcObject = localStream;
+          selfThumbVideo.play().catch(()=>{});
+        }
+
+        // MAJ sorties
         for (const [, mc] of mediaConns){
           await replaceOutgoing(mc, 'audio', micTrack);
         }
@@ -467,7 +493,11 @@
 
         const auds = localStream.getAudioTracks();
         localStream = new MediaStream([camTrack, ...auds]);
-        localV.srcObject = localStream;
+
+        if (selfThumbVideo){
+          selfThumbVideo.srcObject = localStream;
+          selfThumbVideo.play().catch(()=>{});
+        }
 
         for (const [, mc] of mediaConns){
           await replaceOutgoing(mc, 'video', camTrack);
@@ -500,7 +530,11 @@
 
         const auds = localStream.getAudioTracks();
         localStream = new MediaStream([displayVideoTrack, ...auds]);
-        localV.srcObject = localStream;
+
+        if (selfThumbVideo){
+          selfThumbVideo.srcObject = localStream;
+          selfThumbVideo.play().catch(()=>{});
+        }
 
         for (const [, mc] of mediaConns){
           await replaceOutgoing(mc, 'video', displayVideoTrack);
@@ -523,7 +557,6 @@
       if (sender){
         await sender.replaceTrack(track);
       } else {
-        // Fallback soft si le sender n'existe pas (cas timing) : on ajoute la piste
         try { pc.addTrack(track, localStream); } catch {}
       }
     }
@@ -540,6 +573,7 @@
 
     // ==== Audio & vignettes ====
     function addRemoteAudio(peerId, stream){
+      if (peerId === 'self') return; // jamais d'audio pour soi
       let a = remoteAudios.get(peerId);
       if(!a){
         a = document.createElement('audio');
@@ -564,7 +598,7 @@
 
         const v = document.createElement('video');
         v.autoplay = true; v.playsInline = true; v.controls = false;
-        v.muted = true; // vignette muette
+        v.muted = true; // vignettes muettes
         v.id = 'remote-'+peerId;
 
         const name = document.createElement('div');
@@ -590,7 +624,7 @@
       if(!v || !v.srcObject) return;
 
       mainV.srcObject = v.srcObject;
-      mainV.muted = true;
+      mainV.muted = true; // toujours muet (on gère l'audio via <audio> cachés)
       mainV.play().catch(()=>{});
 
       document.querySelectorAll('.thumb').forEach(t=>t.classList.remove('active'));
@@ -605,7 +639,7 @@
       const a = remoteAudios.get(peerId);
       if(a){ try{ a.srcObject=null; a.remove(); }catch{} remoteAudios.delete(peerId); }
 
-      // vignette vidéo
+      // vignette
       const v = remoteVideos.get(peerId);
       if(v){ try{ v.srcObject=null; }catch{}; remoteVideos.delete(peerId); }
       const wrap = document.getElementById('thumb-'+peerId);
@@ -622,7 +656,6 @@
       }
 
       lastSeen.delete(peerId);
-      // purge éventuelle dans peerIdByUuid (si connu)
       for (const [uuid, pid] of peerIdByUuid){
         if (pid === peerId) peerIdByUuid.delete(uuid);
       }
@@ -639,7 +672,7 @@
     btnInvite.onclick = ()=>{
       if(!peerReady){ toast('Initialisation en cours…', 'warn'); return; }
       const base = `${location.origin}${location.pathname}`;
-      const link = `${base}?host=${encodeURIComponent(peer.id)}`; // PATCH: encodeURIComponent
+      const link = `${base}?host=${encodeURIComponent(peer.id)}`;
       inviteInput.value = link; inviteField.style.display='flex';
       if(navigator.share && location.protocol === 'https:'){ btnShare.classList.remove('hidden'); }
     };
@@ -686,7 +719,7 @@
         btnInvite.style.display='inline-block';
       }
 
-      await startCamera(true);
+      await startCamera(true);       // crée localStream + vignette "Moi"
       await populateDeviceLists();
 
       if (isClient && hostId){ initCall(hostId); }
@@ -798,95 +831,10 @@
       }
     }, 3000);
 
-    // ==== PIP local -> mettre sa propre vue en grand si voulu ====
-    localThumb.addEventListener('click', ()=>{
-      mainV.srcObject = localV.srcObject;
-      mainV.muted = true;
-      mainV.play().catch(()=>{});
-      document.querySelectorAll('.thumb').forEach(t=>t.classList.remove('active'));
-      currentMainPeerId = null; // aucun remote sélectionné
-    });
-
     // ==== Speaker select hint ====
     if (!(typeof HTMLMediaElement.prototype.setSinkId === 'function')){
       spkSelect.title = 'Changement de sortie non supporté par ce navigateur';
     }
-
-    // ====== PANNEAU FLOTTANT : Détacher / Réintégrer le retour local ======
-    const btnDetach = document.getElementById('btn-detach');
-    const btnAttach = document.getElementById('btn-attach');
-    let localFloat = null;
-
-    function makeDraggable(el){
-      let dragging=false, startX=0, startY=0, startLeft=0, startTop=0;
-
-      const onDown = (e)=>{
-        dragging = true;
-        const p = (e.touches?.[0]) || e;
-        startX = p.clientX; startY = p.clientY;
-        const rect = el.getBoundingClientRect();
-        startLeft = rect.left; startTop = rect.top;
-        el.style.left = rect.left + 'px';
-        el.style.top  = rect.top + 'px';
-        el.style.right = 'auto';
-        el.style.bottom = 'auto';
-        el.style.cursor = 'grabbing';
-        e.preventDefault?.();
-      };
-
-      const onMove = (e)=>{
-        if(!dragging) return;
-        const p = (e.touches?.[0]) || e;
-        const dx = p.clientX - startX;
-        const dy = p.clientY - startY;
-        el.style.left = (startLeft + dx) + 'px';
-        el.style.top  = (startTop  + dy) + 'px';
-      };
-
-      const onUp = ()=>{
-        dragging=false;
-        el.style.cursor='move';
-      };
-
-      el.addEventListener('mousedown', onDown);
-      el.addEventListener('touchstart', onDown, {passive:false});
-      window.addEventListener('mousemove', onMove, {passive:false});
-      window.addEventListener('touchmove', onMove, {passive:false});
-      window.addEventListener('mouseup', onUp);
-      window.addEventListener('touchend', onUp);
-    }
-
-    btnDetach.onclick = () => {
-      if (localFloat) return;
-      // Crée le conteneur flottant
-      localFloat = document.createElement('div');
-      localFloat.id = 'local-float';
-      document.body.appendChild(localFloat);
-      makeDraggable(localFloat);
-
-      // Déplace la vidéo locale dedans pour conserver le stream et les events
-      localFloat.appendChild(localV);
-
-      // Cache la vignette d’origine
-      localThumb.style.display = 'none';
-
-      btnDetach.style.display='none';
-      btnAttach.style.display='inline-block';
-    };
-
-    btnAttach.onclick = () => {
-      if (!localFloat) return;
-      // Réintègre la vidéo dans sa vignette d’origine
-      localThumb.style.display = '';
-      localThumb.appendChild(localV);
-
-      // Supprime le conteneur flottant
-      localFloat.remove();
-      localFloat = null;
-
-      btnAttach.style.display='none';
-      btnDetach.style.display='inline-block';
-    };
   });
   </script>
 </body>
