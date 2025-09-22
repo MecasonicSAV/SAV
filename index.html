@@ -96,6 +96,15 @@
       position:absolute; left:6px; bottom:6px; font-size:12px; padding:2px 6px;
       border-radius:999px; background:rgba(0,0,0,.45); border:1px solid var(--border);
     }
+
+    /* ====== Panneau flottant (retour vidéo local hors canvas) ====== */
+    #local-float{
+      position:fixed; left:auto; top:auto; right:16px; bottom:16px; z-index:9999;
+      width:320px; max-width:35vw; aspect-ratio:16/9;
+      border:1px solid var(--border); border-radius:12px; overflow:hidden;
+      box-shadow:var(--shadow); background:#000; cursor:move;
+    }
+    #local-float video{ width:100%; height:100%; object-fit:cover; background:#000; }
   </style>
 </head>
 <body>
@@ -165,6 +174,10 @@
         <button class="btn" id="btn-rotate">↺ Inverser caméra</button>
         <button class="btn" id="btn-share-screen">🖥️ Partager écran</button>
         <button class="btn" id="btn-shot">📸 Capture</button>
+
+        <!-- === Boutons panneau flottant === -->
+        <button class="btn" id="btn-detach">📌 Sortir mon retour</button>
+        <button class="btn" id="btn-attach" style="display:none">📥 Réintégrer</button>
       </div>
     </section>
 
@@ -203,6 +216,7 @@
     const thumbs  = document.getElementById('thumbs');
     const localV  = document.getElementById('local-video');
     const localThumb = document.getElementById('local-thumb');
+    const videoArea = document.getElementById('video-area');
 
     const btnInvite = document.getElementById('btn-invite');
     const btnJoin   = document.getElementById('btn-join');
@@ -784,7 +798,7 @@
       }
     }, 3000);
 
-    // ==== PIP local : on peut mettre sa propre vue en grand si voulu ====
+    // ==== PIP local -> mettre sa propre vue en grand si voulu ====
     localThumb.addEventListener('click', ()=>{
       mainV.srcObject = localV.srcObject;
       mainV.muted = true;
@@ -797,6 +811,82 @@
     if (!(typeof HTMLMediaElement.prototype.setSinkId === 'function')){
       spkSelect.title = 'Changement de sortie non supporté par ce navigateur';
     }
+
+    // ====== PANNEAU FLOTTANT : Détacher / Réintégrer le retour local ======
+    const btnDetach = document.getElementById('btn-detach');
+    const btnAttach = document.getElementById('btn-attach');
+    let localFloat = null;
+
+    function makeDraggable(el){
+      let dragging=false, startX=0, startY=0, startLeft=0, startTop=0;
+
+      const onDown = (e)=>{
+        dragging = true;
+        const p = (e.touches?.[0]) || e;
+        startX = p.clientX; startY = p.clientY;
+        const rect = el.getBoundingClientRect();
+        startLeft = rect.left; startTop = rect.top;
+        el.style.left = rect.left + 'px';
+        el.style.top  = rect.top + 'px';
+        el.style.right = 'auto';
+        el.style.bottom = 'auto';
+        el.style.cursor = 'grabbing';
+        e.preventDefault?.();
+      };
+
+      const onMove = (e)=>{
+        if(!dragging) return;
+        const p = (e.touches?.[0]) || e;
+        const dx = p.clientX - startX;
+        const dy = p.clientY - startY;
+        el.style.left = (startLeft + dx) + 'px';
+        el.style.top  = (startTop  + dy) + 'px';
+      };
+
+      const onUp = ()=>{
+        dragging=false;
+        el.style.cursor='move';
+      };
+
+      el.addEventListener('mousedown', onDown);
+      el.addEventListener('touchstart', onDown, {passive:false});
+      window.addEventListener('mousemove', onMove, {passive:false});
+      window.addEventListener('touchmove', onMove, {passive:false});
+      window.addEventListener('mouseup', onUp);
+      window.addEventListener('touchend', onUp);
+    }
+
+    btnDetach.onclick = () => {
+      if (localFloat) return;
+      // Crée le conteneur flottant
+      localFloat = document.createElement('div');
+      localFloat.id = 'local-float';
+      document.body.appendChild(localFloat);
+      makeDraggable(localFloat);
+
+      // Déplace la vidéo locale dedans pour conserver le stream et les events
+      localFloat.appendChild(localV);
+
+      // Cache la vignette d’origine
+      localThumb.style.display = 'none';
+
+      btnDetach.style.display='none';
+      btnAttach.style.display='inline-block';
+    };
+
+    btnAttach.onclick = () => {
+      if (!localFloat) return;
+      // Réintègre la vidéo dans sa vignette d’origine
+      localThumb.style.display = '';
+      localThumb.appendChild(localV);
+
+      // Supprime le conteneur flottant
+      localFloat.remove();
+      localFloat = null;
+
+      btnAttach.style.display='none';
+      btnDetach.style.display='inline-block';
+    };
   });
   </script>
 </body>
