@@ -47,7 +47,8 @@
     .panel-title{ display:flex; align-items:center; gap:10px; font-weight:600; }
     .role{ font-size:12px; color:var(--muted); }
 
-    .video-area{ position:relative; aspect-ratio: 16 / 9; background:#0b0e14; display:grid; place-items:center; }
+    .video-area{ position:relative; aspect-ratio: 16 / 9; background:#0b0e14; display:grid; place-items:center; overflow:hidden; }
+        .video-area.rotate90 video{ transform: rotate(90deg); object-fit:contain; }
     video{ width:100%; height:100%; object-fit:cover; background:#000; }
 
     /* Badges on videos */
@@ -123,6 +124,7 @@
           <span class="role" id="sub-role">Appel en attente</span>
         </div>
         <div>
+          <button class="btn ghost" id="btn-rotate-screen" title="Pivoter l’affichage">↻ Pivoter</button>
           <button class="btn ghost" id="btn-fullscreen" title="Plein écran">⛶ Plein écran</button>
         </div>
       </div>
@@ -177,6 +179,7 @@
     <button class="btn" id="m-toggle-audio" title="Couper/activer le micro">🎙️</button>
     <button class="btn" id="m-rotate" title="Changer de caméra">↺</button>
     <button class="btn" id="m-share" title="Partager écran">🖥️</button>
+    <button class="btn" id="m-rotate-screen" title="Pivoter l’affichage">↻</button>
     <button class="btn" id="m-shot" title="Capture">📸</button>
   </nav>
 
@@ -203,6 +206,8 @@
     const btnShareScreen = document.getElementById('btn-share-screen');
     const btnShot = document.getElementById('btn-shot');
     const btnFullscreen = document.getElementById('btn-fullscreen');
+    const btnRotateScreen = document.getElementById('btn-rotate-screen');
+    const mRotateScreen   = document.getElementById('m-rotate-screen');
 
     // Mobile dock mirrors
     const mToggle = document.getElementById('m-toggle-audio');
@@ -249,7 +254,7 @@
       config: { iceServers: ICE_SERVERS },
       secure: location.protocol === 'https:'
     });
-    let dataConn=null, mediaConn=null; let peerReady=false; let isCalling=false;
+    let dataConn=null, mediaConn=null; let peerReady=false; let isCalling=false; let isSharing=false; let displayStream=null;
     let localStream=null, micTrack=null;
     let audioEnabled = true;
     let facingMode = 'user';
@@ -282,12 +287,26 @@
 
     async function startShare(){
       try{
-        const disp = await navigator.mediaDevices.getDisplayMedia({ video:true, audio:true });
-        const v = disp.getVideoTracks()[0]||null; const a = disp.getAudioTracks()[0]||null;
+        if(isSharing){ // stop share -> back to camera
+          isSharing=false;
+          sharingChip.style.display='none';
+          btnShareScreen.textContent='🖥️ Partager écran';
+          mShare.textContent='🖥️';
+          try{ displayStream?.getTracks().forEach(t=>t.stop()); }catch{}
+          displayStream=null;
+          await startCamera();
+          return;
+        }
+        if(!navigator.mediaDevices.getDisplayMedia){ toast('Partage d’écran non supporté sur ce navigateur', 'warn'); return; }
+        displayStream = await navigator.mediaDevices.getDisplayMedia({ video:true, audio:true });
+        const v = displayStream.getVideoTracks()[0]||null; const a = displayStream.getAudioTracks()[0]||null;
         const mixed = new MediaStream(); if(v) mixed.addTrack(v); if(a) mixed.addTrack(a); else if(micTrack) mixed.addTrack(micTrack);
-        if(v){ v.addEventListener('ended', ()=>{ sharingChip.style.display='none'; startCamera(); }); }
+        if(v){ v.addEventListener('ended', ()=>{ // user pressed "stop"
+          isSharing=false; sharingChip.style.display='none'; btnShareScreen.textContent='🖥️ Partager écran'; mShare.textContent='🖥️'; startCamera();
+        }); }
         await setLocalStream(mixed);
         sharingChip.style.display='inline-flex';
+        isSharing=true; btnShareScreen.textContent='⛔ Arrêter partage'; mShare.textContent='⛔';
         if(mediaConn?.open){ if(v) await replaceOutgoing('video', v); const outA=a||micTrack; if(outA) await replaceOutgoing('audio', outA); }
       }catch(e){ toast('Partage d’écran annulé','warn'); }
     }
@@ -314,10 +333,17 @@
     btnRotate.onclick = ()=>{ facingMode = (facingMode==='user'?'environment':'user'); startCamera(); };
     btnShareScreen.onclick = ()=> startShare();
     btnShot.onclick = async ()=>{ const cvs = await html2canvas(document.querySelector('.video-area')); const a=document.createElement('a'); a.href=cvs.toDataURL('image/png'); a.download='screenshot.png'; a.click(); };
-    btnFullscreen.onclick = ()=>{ const el=document.getElementById('video-area'); (el.requestFullscreen||el.webkitRequestFullscreen||el.msRequestFullscreen||(()=>{})).call(el); };
+    btnRotateScreen.onclick = ()=>{ document.getElementById('video-area').classList.toggle('rotate90'); };
+    btnFullscreen.onclick = ()=>{
+      const el=document.getElementById('video-area');
+      const req = el.requestFullscreen||el.webkitRequestFullscreen||el.msRequestFullscreen||(()=>{});
+      req.call(el);
+      // Tentative de verrouillage paysage (peut échouer selon navigateur/politiques)
+      setTimeout(()=>{ if(screen.orientation && screen.orientation.lock){ screen.orientation.lock('landscape').catch(()=>{}); } }, 120);
+    };
 
     // Mobile dock mirrors
-    mToggle.onclick = ()=>btnToggleAudio.click(); mRotate.onclick=()=>btnRotate.click(); mShare.onclick=()=>btnShareScreen.click(); mShot.onclick=()=>btnShot.click();
+    mToggle.onclick = ()=>btnToggleAudio.click(); mRotate.onclick=()=>btnRotate.click(); mShare.onclick=()=>btnShareScreen.click(); mShot.onclick=()=>btnShot.click(); mRotateScreen.onclick=()=>btnRotateScreen.click();
 
     // Invite / Join
     btnInvite.onclick = ()=>{
