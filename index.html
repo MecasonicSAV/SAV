@@ -41,8 +41,8 @@
     .panel-title{display:flex;align-items:center;gap:10px;font-weight:600;} 
     .role{font-size:12px;color:var(--muted);} 
 
-    .video-area{position:relative;aspect-ratio:16/9;background:#0b0e14;display:grid;place-items:center;overflow:hidden;} 
-    video{width:100%;height:100%;object-fit:cover;background:#000;touch-action:none;} /* touch-action none pour pinch/pan custom */
+    .video-area{position:relative;aspect-ratio:16/9;background:#0b0e14;display:grid;place-items:center;overflow:hidden;touch-action:none;} 
+    video{width:100%;height:100%;object-fit:cover;background:#000;touch-action:none;} /* no native pinch/scroll */
 
     .vid-badges{position:absolute;top:10px;left:10px;display:flex;gap:8px;z-index:3;} 
     .chip{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;font-size:12px;border:1px solid var(--border);background:rgba(0,0,0,.35);} 
@@ -116,7 +116,6 @@
         <span id="conn-dot" class="dot idle" aria-hidden="true"></span>
         <span id="connection-status">En attente…</span>
         <span aria-hidden="true">•</span><span id="latency">Ping : …</span>
-        <!-- micro distant retiré -->
       </div>
     </div>
   </header>
@@ -135,7 +134,6 @@
 
       <div class="video-area" id="video-area">
         <div class="vid-badges">
-          <!-- badge micro distant retiré -->
           <span class="chip" id="sharing-chip" style="display:none">🖥️ Partage d’écran</span>
         </div>
 
@@ -160,7 +158,7 @@
 
         <span class="spacer"></span>
 
-        <!-- À droite (périphériques rangés) -->
+        <!-- À droite (périphériques) -->
         <div class="devices-wrap">
           <button class="btn" id="btn-devices">⚙️ Périphériques</button>
           <div class="devices-panel" id="devices-panel">
@@ -185,12 +183,10 @@
           <button class="btn" id="btn-send">Envoyer</button>
         </div>
       </div>
-
-      <!-- Carte "Statut" supprimée -->
     </aside>
   </main>
 
-  <!-- Dock mobile (retiré: rotate & shot) -->
+  <!-- Dock mobile -->
   <nav class="dock" aria-label="Raccourcis">
     <button class="btn" id="m-toggle-audio" title="Couper/activer le micro">🎙️</button>
     <button class="btn" id="m-share" title="Partager écran">🖥️</button>
@@ -200,7 +196,6 @@
   <div class="toasts" id="toasts" aria-live="polite" aria-atomic="true"></div>
 
   <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
-  <!-- html2canvas supprimé (plus de capture) -->
   <script>
   document.addEventListener('DOMContentLoaded', () => {
     // ==== DOM ====
@@ -239,6 +234,7 @@
 
     const mainRole = document.getElementById('main-role');
     const subRole  = document.getElementById('sub-role');
+    const sharingChip = document.getElementById('sharing-chip');
 
     // ==== Utils / UI ====
     const toasts = document.getElementById('toasts');
@@ -260,7 +256,11 @@
 
     // ==== WebRTC / PeerJS state ====
     const ICE_SERVERS = [
-      { urls: ['stun:stun.l.google.com:19302','stun:global.stun.twilio.com:3478'] },
+      // STUN redondants
+      { urls: ['stun:stun.l.google.com:19302','stun:stun1.l.google.com:19302','stun:stun2.l.google.com:19302'] },
+      { urls: ['stun:stun.cloudflare.com:3478'] },
+      { urls: ['stun:global.stun.twilio.com:3478'] },
+      // TURN public (conservé pour accessibilité)
       { urls: 'turn:openrelay.metered.ca:80',  username: 'openrelayproject', credential: 'openrelayproject' },
       { urls: 'turn:openrelay.metered.ca:443', username: 'openrelayproject', credential: 'openrelayproject' },
       { urls: 'turn:openrelay.metered.ca:443?transport=tcp', username: 'openrelayproject', credential: 'openrelayproject' }
@@ -268,7 +268,12 @@
 
     const peer = new Peer({
       debug: 2,
-      config: { iceServers: ICE_SERVERS, iceCandidatePoolSize: 1 }
+      config: {
+        iceServers: ICE_SERVERS,
+        iceCandidatePoolSize: 8,     // + candidats prêts = démarrage plus rapide
+        bundlePolicy: 'max-bundle',  // moins d'overhead
+        rtcpMuxPolicy: 'require'
+      }
     });
 
     let peerReady=false, isCalling=false, isSharing=false, displayVideoTrack=null;
@@ -300,22 +305,18 @@
 
     // ====== Hang up / teardown ======
     function hangUp(){
-      // Fermer data+media conns
       for (const [, dc] of dataConns){ try{ dc.close(); }catch{} }
       for (const [, mc] of mediaConns){ try{ mc.close(); }catch{} }
       dataConns.clear(); mediaConns.clear();
 
-      // Stopper tracks
       if (localStream){ localStream.getTracks().forEach(t=>{ try{t.stop()}catch{} }); }
       if (displayVideoTrack){ try{displayVideoTrack.stop()}catch{} }
 
-      // Reset vidéos
       for (const [, v] of remoteVideos){ try{ v.srcObject=null; }catch{} }
       remoteVideos.clear();
       remoteAudios.forEach(a=>{ try{a.srcObject=null; a.remove()}catch{} });
       remoteAudios.clear();
 
-      // UI
       thumbs.innerHTML='';
       mainV.srcObject=null;
       currentMainPeerId=null;
@@ -323,13 +324,11 @@
       connStatus.textContent='Terminée';
       setConn('idle');
 
-      // Boutons
       if (isClient){
         btnJoin.classList.remove('hidden');
         btnJoin.style.display='inline-block';
         btnHang.style.display='none';
       }
-      // Host: conserve Inviter visible; Hang reste possible si de nouveau appels se font
       toast('Appel raccroché');
     }
 
@@ -360,7 +359,7 @@
     }
 
     // ==== Media acquisition ====
-    let selfThumbVideo = null; // vidéo de notre vignette "Moi"
+    let selfThumbVideo = null; // vidéo vignette "Moi"
 
     async function startCamera(initial=false){
       const wantBackOnMobile = isMobile() && initial;
@@ -384,6 +383,9 @@
         if (camTrack) localStream.addTrack(camTrack);
         if (micTrack) localStream.addTrack(micTrack);
 
+        // Hints caméra (mouvement fluide)
+        try { camTrack && camTrack.applyConstraints({ advanced: [{ degradationPreference: 'maintain-framerate' }] }); } catch {}
+
         // met à jour envois sortants
         for (const [, mc] of mediaConns){
           const v = camTrack, a = micTrack;
@@ -391,10 +393,8 @@
           if (a) await replaceOutgoing(mc, 'audio', a);
         }
 
-        // vignette locale
         buildSelfThumb();
 
-        // si rien en principal, affiche "Moi"
         if (!currentMainPeerId){
           setMain('self');
         }
@@ -414,7 +414,7 @@
 
         const v = document.createElement('video');
         v.autoplay = true; v.playsInline = true; v.controls = false;
-        v.muted = true; // IMPORTANT: pas de retour son local
+        v.muted = true; // IMPORTANT
         v.id = 'remote-self';
 
         const name = document.createElement('div');
@@ -422,7 +422,7 @@
 
         wrap.appendChild(v);
         wrap.appendChild(name);
-        thumbs.prepend(wrap); // "Moi" en premier
+        thumbs.prepend(wrap);
 
         remoteVideos.set('self', v);
         selfThumbVideo = v;
@@ -506,6 +506,9 @@
         const v = disp.getVideoTracks()[0];
         if (!v){ toast('Aucune piste vidéo de partage','error'); return; }
 
+        try { v.contentHint = 'detail'; } catch {}
+        try { v.applyConstraints({ advanced: [{ degradationPreference: 'maintain-resolution' }] }); } catch {}
+
         displayVideoTrack = v;
         sharingChip.style.display='inline-flex';
         isSharing=true; btnShareScreen.textContent='⛔ Arrêter partage'; mShare.textContent='⛔';
@@ -545,7 +548,7 @@
 
     // ==== Audio & vignettes ====
     function addRemoteAudio(peerId, stream){
-      if (peerId === 'self') return; // jamais d'audio pour soi
+      if (peerId === 'self') return;
       let a = remoteAudios.get(peerId);
       if(!a){
         a = document.createElement('audio');
@@ -608,17 +611,14 @@
     }
 
     function removePeerCompletely(peerId){
-      // audio
       const a = remoteAudios.get(peerId);
       if(a){ try{ a.srcObject=null; a.remove(); }catch{} remoteAudios.delete(peerId); }
 
-      // vignette
       const v = remoteVideos.get(peerId);
       if(v){ try{ v.srcObject=null; }catch{}; remoteVideos.delete(peerId); }
       const wrap = document.getElementById('thumb-'+peerId);
       if(wrap){ wrap.remove(); }
 
-      // connexions
       const mc = mediaConns.get(peerId); if(mc){ try{ mc.close(); }catch{} mediaConns.delete(peerId); }
       const dc = dataConns.get(peerId);  if(dc){ try{ dc.close(); }catch{} dataConns.delete(peerId); }
 
@@ -674,21 +674,79 @@
     // Désactiver UI de partage d’écran sur mobile
     if (isMobile()){ btnShareScreen.style.display='none'; mShare.style.display='none'; }
 
-    // ==== Device selectors bindings ====
+    // ==== Device selectors ====
     micSelect.onchange = (e)=> changeMic(e.target.value);
     camSelect.onchange = (e)=> changeCamera(e.target.value);
     spkSelect.onchange = (e)=> changeSpeaker(e.target.value);
+
+    // ====== Perf helpers (bitrate / codec / ICE restart) ======
+    async function setVideoBitrate(mediaConn, {kbps=1200, scale=1.0, fps=30}={}){
+      const pc = mediaConn?.peerConnection; if(!pc) return;
+      const sender = pc.getSenders().find(s=>s.track?.kind==='video'); if(!sender) return;
+      const params = sender.getParameters() || {};
+      params.encodings = params.encodings || [{}];
+      params.encodings[0].maxBitrate = kbps * 1000;
+      params.encodings[0].maxFramerate = fps;
+      params.encodings[0].scaleResolutionDownBy = scale;
+      try{ await sender.setParameters(params); }catch{}
+    }
+    function adaptQualityForPing(ms, mc){
+      if (ms < 120)      setVideoBitrate(mc, {kbps:1500, scale:1.0,  fps:30});
+      else if (ms < 220) setVideoBitrate(mc, {kbps:900,  scale:1.25, fps:30});
+      else               setVideoBitrate(mc, {kbps:500,  scale:1.75, fps:24});
+    }
+    function preferH264(pc){
+      try{
+        const tx = pc.getTransceivers?.().find(t => t.sender?.track?.kind === 'video');
+        if (!tx || !window.RTCRtpReceiver?.getCapabilities) return;
+        const caps = RTCRtpReceiver.getCapabilities('video');
+        const h264 = caps.codecs.filter(c=>/H264/i.test(c.mimeType));
+        if (h264.length) tx.setCodecPreferences([...h264, ...caps.codecs.filter(c=>!/H264/i.test(c.mimeType))]);
+      }catch{}
+    }
+    async function tuneOpus(mediaConn){
+      const pc = mediaConn?.peerConnection; if(!pc) return;
+      const sender = pc.getSenders().find(s=>s.track?.kind==='audio'); if(!sender) return;
+      const params = sender.getParameters() || {};
+      params.encodings = params.encodings || [{}];
+      params.encodings[0].dtx = true; // OPUS DTX (si supporté)
+      try{ await sender.setParameters(params); }catch{}
+    }
+    function tryIceRestart(mc){
+      const pc = mc?.peerConnection; if (!pc) return;
+      try { pc.restartIce?.(); } catch {}
+    }
+    function watchConn(mc){
+      const pc = mc.peerConnection;
+      pc?.addEventListener('iceconnectionstatechange', ()=>{
+        const s = pc.iceConnectionState;
+        if (s === 'failed' || s === 'disconnected') {
+          setConn('bad');
+          setTimeout(()=> tryIceRestart(mc), 500);
+        } else if (s === 'connected') {
+          setConn('ok');
+        }
+      });
+    }
+
+    // Changement de réseau : relance ICE et baisse le débit provisoirement
+    window.addEventListener('online', ()=>{
+      for (const [, mc] of mediaConns){ tryIceRestart(mc); setVideoBitrate(mc, {kbps:700, scale:1.5, fps:24}); }
+    });
+    if ('connection' in navigator){
+      navigator.connection?.addEventListener?.('change', ()=>{
+        for (const [, mc] of mediaConns){ tryIceRestart(mc); }
+      });
+    }
 
     // ==== PeerJS events ====
     peer.on('open', async id=>{
       peerReady = true;
       if(isClient){
-        // côté client : join visible si pas encore connecté
         btnInvite.style.display='none';
         btnJoin.classList.remove('hidden');
         btnJoin.style.display='inline-block';
       } else {
-        // côté host : inviter + raccrocher visibles
         btnInvite.style.display='inline-block';
         btnHang.style.display='inline-block';
       }
@@ -707,13 +765,16 @@
     }
 
     function setupDataConn(dc){
+      // Anti-doublon
+      const existing = dataConns.get(dc.peer);
+      if (existing && existing.open) { try{ dc.close(); }catch{} return; }
+
       dataConns.set(dc.peer, dc);
       dc.on('open', ()=>{
         connStatus.textContent='Connecté'; setConn('ok'); ding.play().catch(()=>{});
         dc.send({type:'hello', id: peer.id, uuid: SELF_UUID, label: isClient ? 'Client' : 'Technicien'});
         broadcastPeersList();
 
-        // côté client : une fois connecté, remplacer Rejoindre par Raccrocher
         if (isClient){
           btnJoin.style.display='none';
           btnHang.style.display='inline-block';
@@ -738,7 +799,12 @@
           }
         }
         if (payload?.type === 'ping'){ dc.send({type:'pong', time:payload.time}); }
-        if (payload?.type === 'pong'){ updatePing(Date.now()-payload.time); lastSeen.set(dc.peer, Date.now()); }
+        if (payload?.type === 'pong'){
+          const rtt = Date.now()-payload.time;
+          updatePing(rtt); lastSeen.set(dc.peer, Date.now());
+          // Adapter qualité à la volée
+          for (const [, mc] of mediaConns){ adaptQualityForPing(rtt, mc); }
+        }
       });
     }
 
@@ -746,6 +812,11 @@
 
     function setupMediaConn(mc){
       mediaConns.set(mc.peer, mc);
+      const pc = mc.peerConnection;
+
+      // Préférence codec vidéo (H264 first si dispo)
+      preferH264(pc);
+
       mc.on('stream', stream => {
         buildThumb(mc.peer, stream, 'Participant');
         addRemoteAudio(mc.peer, stream);
@@ -755,11 +826,9 @@
       mc.on('close', ()=>{ removePeerCompletely(mc.peer); setConn('warn'); });
       mc.on('error', e=> toast('Erreur appel: '+e,'error'));
 
-      mc.peerConnection?.addEventListener('iceconnectionstatechange', ()=>{
-        const s = mc.peerConnection.iceConnectionState;
-        if(s==='failed' || s==='disconnected'){ setConn('bad'); }
-        if(s==='connected'){ setConn('ok'); }
-      });
+      // Sur connexion, durcir audio (OPUS DTX)
+      tuneOpus(mc);
+      watchConn(mc);
     }
 
     peer.on('call', async inc=>{
@@ -775,7 +844,7 @@
       setupMediaConn(inc);
     });
 
-    peer.on('disconnected', ()=>{ toast('Connexion signalisation perdue. Reconnexion…','warn'); peer.reconnect(); setConn('warn'); });
+    peer.on('disconnected', ()=>{ toast('Signalisation perdue. Reconnexion…','warn'); peer.reconnect(); setConn('warn'); });
     peer.on('error', err=>{ console.error(err); toast('Peer error: '+err.type,'error'); setConn('bad'); });
 
     // ==== Init calls ====
@@ -783,8 +852,11 @@
       if (!peer.open || !remoteId) return;
       const mc = peer.call(remoteId, localStream, { metadata:{ uuid: SELF_UUID, label: isClient ? 'Client' : 'Technicien' } });
       setupMediaConn(mc);
-      const dc = peer.connect(remoteId);
-      setupDataConn(dc);
+      // DataConn: éviter doublon
+      if (!dataConns.has(remoteId) || !dataConns.get(remoteId).open){
+        const dc = peer.connect(remoteId);
+        setupDataConn(dc);
+      }
     }
 
     async function initCall(remoteId){
@@ -799,11 +871,13 @@
       connStatus.textContent='Connexion…';
     }
 
-    // ==== Pings + purge anti-fantômes ====
+    // ==== Pings + purge anti-fantômes (avec jitter) ====
     setInterval(()=>{
       const now = Date.now();
-      for (const [id, dc] of dataConns){
-        if (dc.open){ dc.send({type:'ping', time:now}); }
+      for (const [, dc] of dataConns){
+        if (dc.open){
+          setTimeout(()=> dc.send({type:'ping', time:now}), Math.random()*300);
+        }
       }
       for (const [peerId, t] of lastSeen){
         if (now - t > 12000){
@@ -828,7 +902,6 @@
     }
 
     document.addEventListener('fullscreenchange', ()=>{
-      // reset à l’entrée/sortie si nécessaire
       if (!document.fullscreenElement){
         scale=1; panX=0; panY=0; applyTransform();
       }
@@ -853,7 +926,6 @@
         if (lastDist){
           const factor = d / lastDist;
           scale = Math.min(6, Math.max(1, scale * factor));
-          // pan pour garder la zone sous les doigts visible (approx simple)
           const c = center(e.touches[0], e.touches[1]);
           panX += (c[0]-lastCenter[0]) * 0.8;
           panY += (c[1]-lastCenter[1]) * 0.8;
@@ -878,16 +950,14 @@
     });
 
     // Double-tap pour reset
-let lastTap=0;
-mainV.addEventListener('touchend', ()=>{
-  const now=Date.now();
-  // On ne reset plus le zoom automatiquement à chaque touchend,
-  // mais uniquement si double-tap détecté
-  if (now-lastTap<300 && document.fullscreenElement){
-    scale=1; panX=0; panY=0; applyTransform();
-  }
-  lastTap=now;
-});
+    let lastTap=0;
+    mainV.addEventListener('touchend', ()=>{
+      const now=Date.now();
+      if (now-lastTap<300 && document.fullscreenElement){
+        scale=1; panX=0; panY=0; applyTransform();
+      }
+      lastTap=now;
+    });
   });
   </script>
 </body>
