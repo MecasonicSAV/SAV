@@ -20,6 +20,7 @@
     body{margin:0;font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,"Helvetica Neue",Arial;
          background:linear-gradient(180deg,var(--bg) 0%,var(--bg-soft) 100%); color:var(--text);} 
 
+    /* Topbar */
     .topbar{position:sticky; top:0; z-index:50; backdrop-filter:saturate(1.2) blur(8px);
       background:linear-gradient(90deg,rgba(106,166,255,.08),rgba(94,240,193,.08));
       border-bottom:1px solid var(--border);} 
@@ -30,26 +31,30 @@
     .dot{width:10px;height:10px;border-radius:50%;display:inline-block;box-shadow:0 0 0 3px rgba(255,255,255,.06) inset;} 
     .dot.ok{background:var(--ok)} .dot.warn{background:var(--warn)} .dot.bad{background:var(--danger)} .dot.idle{background:#8a8f9b} 
 
+    /* Layout */
     .container{max-width:1200px;margin:24px auto;padding:0 16px 100px;display:grid;grid-template-columns: 1fr 340px;gap:16px;} 
     @media (max-width: 980px){ .container{ grid-template-columns:1fr; } } 
 
+    /* Panel */
     .panel{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;} 
     .panel-header{display:flex;align-items:center;justify-content:space-between;padding:10px 12px;border-bottom:1px solid var(--border);} 
     .panel-title{display:flex;align-items:center;gap:10px;font-weight:600;} 
     .role{font-size:12px;color:var(--muted);} 
 
     .video-area{position:relative;aspect-ratio:16/9;background:#0b0e14;display:grid;place-items:center;overflow:hidden;} 
-    video{width:100%;height:100%;object-fit:cover;background:#000;touch-action:none;}
+    video{width:100%;height:100%;object-fit:cover;background:#000;touch-action:none;} /* touch-action none pour pinch/pan custom */
 
     .vid-badges{position:absolute;top:10px;left:10px;display:flex;gap:8px;z-index:3;} 
     .chip{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;font-size:12px;border:1px solid var(--border);background:rgba(0,0,0,.35);} 
 
+    /* Controls */
     .controls{display:flex;align-items:center;flex-wrap:wrap;gap:10px;padding:12px;border-top:1px solid var(--border);background:linear-gradient(180deg,rgba(255,255,255,.02),transparent);} 
     .btn{appearance:none;border:1px solid var(--border);background:linear-gradient(180deg,rgba(255,255,255,.06),rgba(0,0,0,.06));color:var(--text);padding:10px 12px;border-radius:12px;font-weight:600;cursor:pointer;display:inline-flex;align-items:center;gap:8px;box-shadow:0 2px 0 rgba(0,0,0,.2);} 
     .btn:hover{filter:brightness(1.06)} .btn:active{transform:translateY(1px)} .btn.primary{border-color:transparent;background:linear-gradient(90deg,var(--brand),var(--brand-2));color:#0b0e14;} 
     .btn.ghost{background:transparent;} 
 
     .controls .spacer{flex:1}
+    /* Panneau périphériques (à droite) */
     .devices-wrap{margin-left:auto;position:relative;}
     .devices-panel{
       position:absolute; right:0; top:110%;
@@ -60,6 +65,7 @@
     .devices-panel .row{display:flex; gap:8px; margin:6px 0;}
     .devices-panel select{flex:1; padding:10px 12px; border-radius:10px; border:1px solid var(--border); background:rgba(255,255,255,.04); color:var(--text);}
 
+    /* Sidebar */
     .side{display:flex;flex-direction:column;gap:12px;} 
     .card{background:var(--panel);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow);overflow:hidden;} 
     .card-header{padding:10px 12px;border-bottom:1px solid var(--border);font-weight:700;} 
@@ -67,16 +73,19 @@
     .msg{padding:8px 10px;background:rgba(255,255,255,.04);border:1px solid var(--border);border-radius:10px;} 
     .chat-input{display:flex;gap:8px;padding:10px;} .chat-input input{flex:1;} 
 
+    /* Toasts */
     .toasts{position:fixed;bottom:20px;left:50%;transform:translateX(-50%);display:flex;flex-direction:column;gap:8px;z-index:100;} 
     .toast{padding:10px 14px;border-radius:12px;color:#0b0e14;background:#d1f2e3;box-shadow:var(--shadow);border:1px solid rgba(0,0,0,.06);font-weight:700;} 
     .toast.warn{background:#ffeac2} .toast.error{background:#ffd6d6} 
 
+    /* Dock mobile */
     .dock{position:fixed;bottom:14px;left:50%;transform:translateX(-50%);background:rgba(15,17,21,.6);border:1px solid var(--border);border-radius:9999px;padding:8px;display:flex;gap:8px;box-shadow:var(--shadow);backdrop-filter:blur(8px);z-index:60;} 
     .dock .btn{padding:10px 12px;} 
     @media (min-width:980px){ .dock{display:none;} } 
 
     .hidden{display:none !important;} 
 
+    /* ---- Vignettes cliquables ---- */
     .thumbs{
       position:absolute; left:12px; right:12px; bottom:12px;
       display:flex; gap:8px; padding:8px;
@@ -107,7 +116,7 @@
         <span id="conn-dot" class="dot idle" aria-hidden="true"></span>
         <span id="connection-status">En attente…</span>
         <span aria-hidden="true">•</span><span id="latency">Ping : …</span>
-        
+        <!-- micro distant retiré -->
       </div>
     </div>
   </header>
@@ -126,19 +135,19 @@
 
       <div class="video-area" id="video-area">
         <div class="vid-badges">
-          
+          <!-- badge micro distant retiré -->
           <span class="chip" id="sharing-chip" style="display:none">🖥️ Partage d’écran</span>
         </div>
 
-        
+        <!-- Grand canvas -->
         <video id="main-video" autoplay playsinline muted></video>
 
-        
+        <!-- Vignettes -->
         <div id="thumbs" class="thumbs"></div>
       </div>
 
       <div class="controls" id="controls">
-        
+        <!-- À gauche (actions session) -->
         <button class="btn primary" id="btn-invite">🔗 Inviter</button>
         <button class="btn hidden" id="btn-join">Rejoindre</button>
         <button class="btn" id="btn-hang" style="display:none">⛔ Raccrocher</button>
@@ -151,7 +160,7 @@
 
         <span class="spacer"></span>
 
-        
+        <!-- À droite (périphériques rangés) -->
         <div class="devices-wrap">
           <button class="btn" id="btn-devices">⚙️ Périphériques</button>
           <div class="devices-panel" id="devices-panel">
@@ -161,7 +170,7 @@
           </div>
         </div>
 
-        
+        <!-- Audio & partage -->
         <button class="btn" id="btn-toggle-audio">🔇 Couper micro</button>
         <button class="btn" id="btn-share-screen">🖥️ Partager écran</button>
       </div>
@@ -177,11 +186,11 @@
         </div>
       </div>
 
-      
+      <!-- Carte "Statut" supprimée -->
     </aside>
   </main>
 
-  
+  <!-- Dock mobile (retiré: rotate & shot) -->
   <nav class="dock" aria-label="Raccourcis">
     <button class="btn" id="m-toggle-audio" title="Couper/activer le micro">🎙️</button>
     <button class="btn" id="m-share" title="Partager écran">🖥️</button>
@@ -191,9 +200,10 @@
   <div class="toasts" id="toasts" aria-live="polite" aria-atomic="true"></div>
 
   <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
-  
+  <!-- html2canvas supprimé (plus de capture) -->
   <script>
   document.addEventListener('DOMContentLoaded', () => {
+    // ==== DOM ====
     const mainV   = document.getElementById('main-video');
     const thumbs  = document.getElementById('thumbs');
 
@@ -230,6 +240,7 @@
     const mainRole = document.getElementById('main-role');
     const subRole  = document.getElementById('sub-role');
 
+    // ==== Utils / UI ====
     const toasts = document.getElementById('toasts');
     function toast(txt, type=''){ const t=document.createElement('div'); t.className='toast'+(type?(' '+type):''); t.textContent=txt; toasts.appendChild(t); setTimeout(()=>t.remove(), 3200); }
     function setConn(state){ connDot.className = 'dot '+state; }
@@ -238,6 +249,7 @@
     const ding = new Audio('https://www.soundjay.com/buttons/sounds/button-3.mp3');
     const isMobile = () => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 
+    // fermer panneau périphériques au clic extérieur
     document.addEventListener('click', (e)=>{
       if (!devicesPanel.contains(e.target) && e.target !== btnDevices) devicesPanel.classList.remove('open');
     });
@@ -246,6 +258,7 @@
       devicesPanel.classList.toggle('open');
     });
 
+    // ==== WebRTC / PeerJS state ====
     const ICE_SERVERS = [
       { urls: ['stun:stun.l.google.com:19302','stun:global.stun.twilio.com:3478'] },
       { urls: 'turn:openrelay.metered.ca:80',  username: 'openrelayproject', credential: 'openrelayproject' },
@@ -262,20 +275,22 @@
     let localStream=null, micTrack=null, camTrack=null;
     let audioEnabled=true;
 
+    // Multi-participants & anti-doublons
     const SELF_UUID = (() => {
       let u = localStorage.getItem('client_uuid');
       if(!u){ u = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random())); localStorage.setItem('client_uuid', u); }
       return u;
     })();
 
-    const mediaConns = new Map();
-    const dataConns  = new Map();
-    const remoteVideos = new Map();
-    const remoteAudios = new Map();
-    const peerIdByUuid = new Map();
-    const lastSeen = new Map();
+    const mediaConns = new Map();    // peerId -> MediaConnection
+    const dataConns  = new Map();    // peerId -> DataConnection
+    const remoteVideos = new Map();  // peerId -> <video> (inclut 'self')
+    const remoteAudios = new Map();  // peerId -> <audio> (jamais pour 'self')
+    const peerIdByUuid = new Map();  // uuid -> peerId courant
+    const lastSeen = new Map();      // peerId -> timestamp
     let currentMainPeerId = null;
 
+    // Rôle via URL
     const url = new URL(window.location.href);
     const hostId = url.searchParams.get('host');
     const isClient = Boolean(hostId);
@@ -283,19 +298,24 @@
     mainRole.textContent = isClient ? 'Client' : 'Technicien';
     subRole.textContent  = 'En attente de connexion';
 
+    // ====== Hang up / teardown ======
     function hangUp(){
+      // Fermer data+media conns
       for (const [, dc] of dataConns){ try{ dc.close(); }catch{} }
       for (const [, mc] of mediaConns){ try{ mc.close(); }catch{} }
       dataConns.clear(); mediaConns.clear();
 
+      // Stopper tracks
       if (localStream){ localStream.getTracks().forEach(t=>{ try{t.stop()}catch{} }); }
       if (displayVideoTrack){ try{displayVideoTrack.stop()}catch{} }
 
+      // Reset vidéos
       for (const [, v] of remoteVideos){ try{ v.srcObject=null; }catch{} }
       remoteVideos.clear();
       remoteAudios.forEach(a=>{ try{a.srcObject=null; a.remove()}catch{} });
       remoteAudios.clear();
 
+      // UI
       thumbs.innerHTML='';
       mainV.srcObject=null;
       currentMainPeerId=null;
@@ -303,14 +323,17 @@
       connStatus.textContent='Terminée';
       setConn('idle');
 
+      // Boutons
       if (isClient){
         btnJoin.classList.remove('hidden');
         btnJoin.style.display='inline-block';
         btnHang.style.display='none';
       }
+      // Host: conserve Inviter visible; Hang reste possible si de nouveau appels se font
       toast('Appel raccroché');
     }
 
+    // ==== Devices helpers ====
     async function populateDeviceLists(){
       try{
         const devices = await navigator.mediaDevices.enumerateDevices();
@@ -333,10 +356,11 @@
           const back = cams.find(c => /back|rear|environment/i.test(c.label));
           if(back){ camSelect.value = back.deviceId; }
         }
-      }catch(e){ }
+      }catch(e){ /* ignore */ }
     }
 
-    let selfThumbVideo = null;
+    // ==== Media acquisition ====
+    let selfThumbVideo = null; // vidéo de notre vignette "Moi"
 
     async function startCamera(initial=false){
       const wantBackOnMobile = isMobile() && initial;
@@ -360,14 +384,17 @@
         if (camTrack) localStream.addTrack(camTrack);
         if (micTrack) localStream.addTrack(micTrack);
 
+        // met à jour envois sortants
         for (const [, mc] of mediaConns){
           const v = camTrack, a = micTrack;
           if (v) await replaceOutgoing(mc, 'video', v);
           if (a) await replaceOutgoing(mc, 'audio', a);
         }
 
+        // vignette locale
         buildSelfThumb();
 
+        // si rien en principal, affiche "Moi"
         if (!currentMainPeerId){
           setMain('self');
         }
@@ -387,7 +414,7 @@
 
         const v = document.createElement('video');
         v.autoplay = true; v.playsInline = true; v.controls = false;
-        v.muted = true;
+        v.muted = true; // IMPORTANT: pas de retour son local
         v.id = 'remote-self';
 
         const name = document.createElement('div');
@@ -395,7 +422,7 @@
 
         wrap.appendChild(v);
         wrap.appendChild(name);
-        thumbs.prepend(wrap);
+        thumbs.prepend(wrap); // "Moi" en premier
 
         remoteVideos.set('self', v);
         selfThumbVideo = v;
@@ -434,7 +461,7 @@
     async function changeSpeaker(deviceId){
       for (const [, audio] of remoteAudios){
         if (typeof audio.setSinkId === 'function'){
-          try{ await audio.setSinkId(deviceId); }catch(e){ }
+          try{ await audio.setSinkId(deviceId); }catch(e){ /* ignore */ }
         }
       }
     }
@@ -460,6 +487,7 @@
       }catch(e){ toast('Changement de caméra impossible : '+e.message,'error'); }
     }
 
+    // ==== Screen share : remplace uniquement la vidéo ====
     async function startShare(){
       if (isMobile()){
         toast('Le partage d’écran est disponible uniquement sur ordinateur.', 'warn');
@@ -503,6 +531,7 @@
       }catch(e){ toast('Partage d’écran annulé','warn'); }
     }
 
+    // ==== Senders replace ====
     async function replaceOutgoing(mediaConn, kind, track){
       const pc = mediaConn?.peerConnection;
       if (!pc) return;
@@ -514,8 +543,9 @@
       }
     }
 
+    // ==== Audio & vignettes ====
     function addRemoteAudio(peerId, stream){
-      if (peerId === 'self') return;
+      if (peerId === 'self') return; // jamais d'audio pour soi
       let a = remoteAudios.get(peerId);
       if(!a){
         a = document.createElement('audio');
@@ -540,7 +570,7 @@
 
         const v = document.createElement('video');
         v.autoplay = true; v.playsInline = true; v.controls = false;
-        v.muted = true;
+        v.muted = true; // vignettes muettes
         v.id = 'remote-'+peerId;
 
         const name = document.createElement('div');
@@ -566,8 +596,8 @@
       if(!v || !v.srcObject) return;
 
       mainV.srcObject = v.srcObject;
-      mainV.muted = true;
-      mainV.style.transform = 'translate(0,0) scale(1)';
+      mainV.muted = true; // on gère l'audio via <audio> cachés
+      mainV.style.transform = 'translate(0,0) scale(1)'; // reset zoom si on change
       mainV.play().catch(()=>{});
 
       document.querySelectorAll('.thumb').forEach(t=>t.classList.remove('active'));
@@ -578,14 +608,17 @@
     }
 
     function removePeerCompletely(peerId){
+      // audio
       const a = remoteAudios.get(peerId);
       if(a){ try{ a.srcObject=null; a.remove(); }catch{} remoteAudios.delete(peerId); }
 
+      // vignette
       const v = remoteVideos.get(peerId);
       if(v){ try{ v.srcObject=null; }catch{}; remoteVideos.delete(peerId); }
       const wrap = document.getElementById('thumb-'+peerId);
       if(wrap){ wrap.remove(); }
 
+      // connexions
       const mc = mediaConns.get(peerId); if(mc){ try{ mc.close(); }catch{} mediaConns.delete(peerId); }
       const dc = dataConns.get(peerId);  if(dc){ try{ dc.close(); }catch{} dataConns.delete(peerId); }
 
@@ -601,12 +634,14 @@
       }
     }
 
+    // ==== Chat ====
     btnSend.onclick = ()=>{
       const t = msgInput.value.trim(); if(!t) return;
       for (const [, dc] of dataConns){ if (dc.open) dc.send({type:'chat', text:t}); }
       appendMsg('Moi', t); msgInput.value='';
     };
 
+    // ==== Invite / Join / Hang UI ====
     btnInvite.onclick = ()=>{
       if(!peerReady){ toast('Initialisation en cours…', 'warn'); return; }
       const base = `${location.origin}${location.pathname}`;
@@ -620,6 +655,7 @@
     btnHang.onclick = ()=> hangUp();
     mHang.onclick   = ()=> hangUp();
 
+    // ==== Buttons ====
     btnToggleAudio.onclick = ()=>{
       audioEnabled = !audioEnabled;
       if(micTrack){ micTrack.enabled = audioEnabled; }
@@ -631,22 +667,28 @@
       (el.requestFullscreen||el.webkitRequestFullscreen||el.msRequestFullscreen||(()=>{})).call(el);
     };
 
+    // Dock mirrors
     mToggle.onclick = ()=>btnToggleAudio.click();
     mShare.onclick  = ()=>btnShareScreen.click();
 
+    // Désactiver UI de partage d’écran sur mobile
     if (isMobile()){ btnShareScreen.style.display='none'; mShare.style.display='none'; }
 
+    // ==== Device selectors bindings ====
     micSelect.onchange = (e)=> changeMic(e.target.value);
     camSelect.onchange = (e)=> changeCamera(e.target.value);
     spkSelect.onchange = (e)=> changeSpeaker(e.target.value);
 
+    // ==== PeerJS events ====
     peer.on('open', async id=>{
       peerReady = true;
       if(isClient){
+        // côté client : join visible si pas encore connecté
         btnInvite.style.display='none';
         btnJoin.classList.remove('hidden');
         btnJoin.style.display='inline-block';
       } else {
+        // côté host : inviter + raccrocher visibles
         btnInvite.style.display='inline-block';
         btnHang.style.display='inline-block';
       }
@@ -671,6 +713,7 @@
         dc.send({type:'hello', id: peer.id, uuid: SELF_UUID, label: isClient ? 'Client' : 'Technicien'});
         broadcastPeersList();
 
+        // côté client : une fois connecté, remplacer Rejoindre par Raccrocher
         if (isClient){
           btnJoin.style.display='none';
           btnHang.style.display='inline-block';
@@ -735,6 +778,7 @@
     peer.on('disconnected', ()=>{ toast('Connexion signalisation perdue. Reconnexion…','warn'); peer.reconnect(); setConn('warn'); });
     peer.on('error', err=>{ console.error(err); toast('Peer error: '+err.type,'error'); setConn('bad'); });
 
+    // ==== Init calls ====
     async function callPeer(remoteId){
       if (!peer.open || !remoteId) return;
       const mc = peer.call(remoteId, localStream, { metadata:{ uuid: SELF_UUID, label: isClient ? 'Client' : 'Technicien' } });
@@ -755,6 +799,7 @@
       connStatus.textContent='Connexion…';
     }
 
+    // ==== Pings + purge anti-fantômes ====
     setInterval(()=>{
       const now = Date.now();
       for (const [id, dc] of dataConns){
@@ -767,10 +812,12 @@
       }
     }, 3000);
 
+    // ==== Speaker select hint ====
     if (!(typeof HTMLMediaElement.prototype.setSinkId === 'function')){
       spkSelect.title = 'Changement de sortie non supporté par ce navigateur';
     }
 
+    // ====== Pinch-to-zoom en plein écran (mobile) ======
     let scale=1, lastDist=0, lastCenter=[0,0], panX=0, panY=0;
     function dist(p1,p2){ const dx=p1.clientX-p2.clientX, dy=p1.clientY-p2.clientY; return Math.hypot(dx,dy); }
     function center(p1,p2){ return [(p1.clientX+p2.clientX)/2,(p1.clientY+p2.clientY)/2]; }
@@ -781,11 +828,13 @@
     }
 
     document.addEventListener('fullscreenchange', ()=>{
+      // reset à l’entrée/sortie si nécessaire
       if (!document.fullscreenElement){
         scale=1; panX=0; panY=0; applyTransform();
       }
     });
 
+    // Gestes tactiles
     let dragging=false, prevX=0, prevY=0;
     mainV.addEventListener('touchstart', (e)=>{
       if (!document.fullscreenElement) return;
@@ -804,6 +853,7 @@
         if (lastDist){
           const factor = d / lastDist;
           scale = Math.min(6, Math.max(1, scale * factor));
+          // pan pour garder la zone sous les doigts visible (approx simple)
           const c = center(e.touches[0], e.touches[1]);
           panX += (c[0]-lastCenter[0]) * 0.8;
           panY += (c[1]-lastCenter[1]) * 0.8;
@@ -827,6 +877,7 @@
       if (e.touches.length===0) dragging=false;
     });
 
+    // Double-tap pour reset
     let lastTap=0;
     mainV.addEventListener('touchend', ()=>{
       const now=Date.now();
