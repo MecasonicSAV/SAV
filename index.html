@@ -806,11 +806,13 @@ updateAreaAspectFromVideo(mainV);
       params.encodings[0].scaleResolutionDownBy = scale;
       try{ await sender.setParameters(params); }catch{}
     }
-    function adaptQualityForPing(ms, mc){
-      if (ms < 120)      setVideoBitrate(mc, {kbps:1500, scale:1.0,  fps:30});
-      else if (ms < 220) setVideoBitrate(mc, {kbps:900,  scale:1.25, fps:30});
-      else               setVideoBitrate(mc, {kbps:500,  scale:1.75, fps:24});
-    }
+function adaptQualityForPing(ms, mc){
+  if (ms < 30)      setVideoBitrate(mc, {kbps:2500, scale:1.0,  fps:30});
+  else if (ms < 120) setVideoBitrate(mc, {kbps:1500, scale:1.0, fps:30});
+  else if (ms < 220) setVideoBitrate(mc, {kbps:900,  scale:1.25, fps:30});
+  else               setVideoBitrate(mc, {kbps:500,  scale:1.75, fps:24});
+}
+
     function preferH264(pc){
       try{
         const tx = pc.getTransceivers?.().find(t => t.sender?.track?.kind === 'video');
@@ -895,16 +897,20 @@ updateAreaAspectFromVideo(mainV);
           btnJoin.style.display='none';
           btnHang.style.display='inline-block';
         }
+        if (!mediaConns.has(dc.peer)) {
+  callPeer(dc.peer);
+}
       });
       dc.on('close', ()=>{ removePeerCompletely(dc.peer); setConn('warn'); });
       dc.on('error', e=>toast('Erreur data: '+e,'error'));
       dc.on('data', payload=>{
         if (typeof payload === 'string'){ appendMsg(dc.peer, payload); return; }
         if (payload?.type === 'chat'){ appendMsg(dc.peer, payload.text); }
-        if (payload?.type === 'peers' && isClient){
-          const ids = (payload.ids||[]).filter(pid => pid && pid !== peer.id && !mediaConns.has(pid));
-          for (const pid of ids){ callPeer(pid); }
-        }
+     if (payload?.type === 'peers'){
+  const ids = (payload.ids||[])
+    .filter(pid => pid && pid !== peer.id && !mediaConns.has(pid));
+  for (const pid of ids){ callPeer(pid); }
+}
         if (payload?.type === 'hello'){
           if (payload.uuid){
             const existing = peerIdByUuid.get(payload.uuid);
@@ -924,8 +930,10 @@ updateAreaAspectFromVideo(mainV);
       });
     }
 
-    peer.on('connection', c => setupDataConn(c));
-
+peer.on('connection', c => {
+  setupDataConn(c);
+  broadcastPeersList();
+});
     function setupMediaConn(mc){
       mediaConns.set(mc.peer, mc);
       const pc = mc.peerConnection;
