@@ -878,14 +878,16 @@
     });
 
     // Double-tap pour reset
-    let lastTap=0;
-    mainV.addEventListener('touchend', ()=>{
-      const now=Date.now();
-      if (now-lastTap<300 && document.fullscreenElement){
-        scale=1; panX=0; panY=0; applyTransform();
-      }
-      lastTap=now;
-    });
+let lastTap=0;
+mainV.addEventListener('touchend', ()=>{
+  const now=Date.now();
+  // On ne reset plus le zoom automatiquement à chaque touchend,
+  // mais uniquement si double-tap détecté
+  if (now-lastTap<300 && document.fullscreenElement){
+    scale=1; panX=0; panY=0; applyTransform();
+  }
+  lastTap=now;
+});
   });
   </script>
 </body>
