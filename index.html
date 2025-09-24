@@ -193,10 +193,11 @@ video{
       <div class="card">
         <div class="card-header">Chat</div>
         <div class="chat-log" id="messages" aria-live="polite"></div>
-        <div class="chat-input">
-          <input id="msg-input" placeholder="Écrire un message…" />
-          <button class="btn" id="btn-send">Envoyer</button>
-        </div>
+<div class="chat-input">
+  <input id="msg-input" placeholder="Écrire un message…" />
+  <button class="btn" id="btn-stt">🎤 Transcrire</button>
+  <button class="btn" id="btn-send">Envoyer</button>
+</div>
       </div>
     </aside>
   </main>
@@ -258,6 +259,57 @@ video{
     function setConn(state){ connDot.className = 'dot '+state; }
     function updatePing(ms){ latencyEl.textContent = `Ping : ${ms} ms`; setConn(ms<100?'ok': ms<220?'warn':'bad'); }
     function appendMsg(from, txt){ const el=document.createElement('div'); el.className='msg'; el.textContent = `${from} : ${txt}`; messages.appendChild(el); messages.scrollTop = messages.scrollHeight; }
+    const btnSTT = document.getElementById('btn-stt');
+(function initSTT(){
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) {
+    btnSTT?.remove();
+    return;
+  }
+
+  const recognition = new SR();
+  recognition.lang = 'fr-FR';        // langue principale
+  recognition.continuous = true;     // écoute continue
+  recognition.interimResults = false; // uniquement les phrases finales
+
+  let listening = false;
+
+  function setListening(on){
+    listening = on;
+    btnSTT.textContent = on ? '🛑 Stop' : '🎤 Transcrire';
+    btnSTT.classList.toggle('primary', on);
+  }
+
+  recognition.onstart = () => setListening(true);
+  recognition.onend   = () => setListening(false);
+
+  recognition.onerror = e => {
+    toast('Erreur STT: '+e.error, 'error');
+    setListening(false);
+  };
+
+  recognition.onresult = e => {
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) {
+        const text = e.results[i][0].transcript.trim();
+        if (text) {
+          // injecte directement dans le chat local
+          appendMsg('Transcription', text);
+          // envoie aussi aux autres si tu veux
+          for (const [, dc] of dataConns){ if (dc.open) dc.send({type:'chat', text:"[STT] "+text}); }
+        }
+      }
+    }
+  };
+
+  btnSTT.addEventListener('click', ()=>{
+    if (!listening) {
+      try{ recognition.start(); }catch{}
+    } else {
+      recognition.stop();
+    }
+  });
+})();
     const ding = new Audio('https://www.soundjay.com/buttons/sounds/button-3.mp3');
     const isMobile = () => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 // -- Ajuste le ratio du conteneur sur le flux affiché --
