@@ -41,8 +41,23 @@
     .panel-title{display:flex;align-items:center;gap:10px;font-weight:600;} 
     .role{font-size:12px;color:var(--muted);} 
 
-    .video-area{position:relative;aspect-ratio:16/9;background:#0b0e14;display:grid;place-items:center;overflow:hidden;touch-action:none;} 
-    video{width:100%;height:100%;object-fit:contain;background:#000;touch-action:none;} /* no native pinch/scroll */
+.video-area{
+  position:relative;
+  background:#0b0e14;
+  display:grid;
+  place-items:center;
+  overflow:hidden;
+  touch-action:none;
+  /* pas d'aspect-ratio statique ici */
+}
+/* La vidéo reste en contain (déjà présent) */
+video{
+  width:100%;
+  height:100%;
+  object-fit:contain;
+  background:#000;
+  touch-action:none;
+}
 
     .vid-badges{position:absolute;top:10px;left:10px;display:flex;gap:8px;z-index:3;} 
     .chip{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;font-size:12px;border:1px solid var(--border);background:rgba(0,0,0,.35);} 
@@ -93,7 +108,7 @@
       border-radius:12px; overflow:auto; z-index:5;
     }
     .thumb{
-      position:relative; width:140px; aspect-ratio:16/9;
+  position:relative; width:140px;
       border:1px solid var(--border); border-radius:10px; overflow:hidden; cursor:pointer;
       box-shadow:var(--shadow); flex:0 0 auto; outline:2px solid transparent; outline-offset:0;
     }
@@ -200,6 +215,7 @@
   document.addEventListener('DOMContentLoaded', () => {
     // ==== DOM ====
     const mainV   = document.getElementById('main-video');
+    watchVideoMetadata(mainV);
     const thumbs  = document.getElementById('thumbs');
 
     const btnInvite = document.getElementById('btn-invite');
@@ -244,6 +260,47 @@
     function appendMsg(from, txt){ const el=document.createElement('div'); el.className='msg'; el.textContent = `${from} : ${txt}`; messages.appendChild(el); messages.scrollTop = messages.scrollHeight; }
     const ding = new Audio('https://www.soundjay.com/buttons/sounds/button-3.mp3');
     const isMobile = () => /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+// -- Ajuste le ratio du conteneur sur le flux affiché --
+function updateAreaAspectFromVideo(videoEl){
+  // Essaye d'abord les dimensions réelles de rendu
+  let w = videoEl.videoWidth;
+  let h = videoEl.videoHeight;
+
+  // Fallback: certaines plateformes exposent les settings du track
+  if ((!w || !h) && videoEl.srcObject){
+    const vt = videoEl.srcObject.getVideoTracks?.()[0];
+    const st = vt?.getSettings?.();
+    if (st?.width && st?.height){ w = st.width; h = st.height; }
+  }
+
+  // Dernier filet de sécurité
+  if (!w || !h){ return; }
+
+  // Applique le ratio sur le conteneur principal
+  const area = document.getElementById('video-area');
+  area.style.aspectRatio = `${w} / ${h}`;
+}
+
+// Observe les changements de taille intrinsèque de la vidéo
+function watchVideoMetadata(videoEl){
+  // 1) premier chargement
+  videoEl.addEventListener('loadedmetadata', ()=> updateAreaAspectFromVideo(videoEl));
+  // 2) certains navigateurs déclenchent un resize quand l'orientation change (mobile)
+  videoEl.addEventListener('resize', ()=> updateAreaAspectFromVideo(videoEl));
+
+  // 3) garde-fou: poll léger si le ratio change en cours d'appel (rotation téléphone)
+  let lastW=0, lastH=0;
+  const iv = setInterval(()=>{
+    if (videoEl.videoWidth && videoEl.videoHeight){
+      if (videoEl.videoWidth !== lastW || videoEl.videoHeight !== lastH){
+        lastW = videoEl.videoWidth; lastH = videoEl.videoHeight;
+        updateAreaAspectFromVideo(videoEl);
+      }
+    }
+    // stop si la vidéo est détachée
+    if (!document.body.contains(videoEl)) clearInterval(iv);
+  }, 800);
+}
 
     // fermer panneau périphériques au clic extérieur
     document.addEventListener('click', (e)=>{
@@ -564,34 +621,41 @@
       lastSeen.set(peerId, Date.now());
     }
 
-    function buildThumb(peerId, stream, label='Participant'){
-      let wrap = document.getElementById('thumb-'+peerId);
-      if(!wrap){
-        wrap = document.createElement('div');
-        wrap.className = 'thumb';
-        wrap.id = 'thumb-'+peerId;
+   function buildThumb(peerId, stream, label='Participant'){
+  let wrap = document.getElementById('thumb-'+peerId);
+  if(!wrap){
+    wrap = document.createElement('div');
+    wrap.className = 'thumb';
+    wrap.id = 'thumb-'+peerId;
 
-        const v = document.createElement('video');
-        v.autoplay = true; v.playsInline = true; v.controls = false;
-        v.muted = true; // vignettes muettes
-        v.id = 'remote-'+peerId;
+    const v = document.createElement('video');
+    v.autoplay = true; v.playsInline = true; v.controls = false;
+    v.muted = true;
+    v.id = 'remote-'+peerId;
 
-        const name = document.createElement('div');
-        name.className = 'name'; name.textContent = label;
+    const name = document.createElement('div');
+    name.className = 'name'; name.textContent = label;
 
-        wrap.appendChild(v);
-        wrap.appendChild(name);
-        thumbs.appendChild(wrap);
+    wrap.appendChild(v);
+    wrap.appendChild(name);
+    thumbs.appendChild(wrap);
 
-        remoteVideos.set(peerId, v);
+    remoteVideos.set(peerId, v);
 
-        wrap.addEventListener('click', ()=> setMain(peerId));
+    wrap.addEventListener('click', ()=> setMain(peerId));
+
+    // ➜ Surveille les métadonnées pour régler la vignette au bon ratio
+    v.addEventListener('loadedmetadata', ()=>{
+      if (v.videoWidth && v.videoHeight){
+        wrap.style.aspectRatio = `${v.videoWidth} / ${v.videoHeight}`;
       }
+    });
+  }
 
-      const vid = remoteVideos.get(peerId);
-      vid.srcObject = stream;
-      vid.play().catch(()=>{});
-    }
+  const vid = remoteVideos.get(peerId);
+  vid.srcObject = stream;
+  vid.play().catch(()=>{});
+}
 
     function setMain(peerId){
       if(peerId === currentMainPeerId) return;
@@ -602,7 +666,7 @@
       mainV.muted = true; // on gère l'audio via <audio> cachés
       mainV.style.transform = 'translate(0,0) scale(1)'; // reset zoom si on change
       mainV.play().catch(()=>{});
-
+updateAreaAspectFromVideo(mainV);
       document.querySelectorAll('.thumb').forEach(t=>t.classList.remove('active'));
       const active = document.getElementById('thumb-'+peerId);
       if(active) active.classList.add('active');
