@@ -389,12 +389,12 @@ function watchVideoMetadata(videoEl){
     let localStream=null, micTrack=null, camTrack=null;
     let audioEnabled=true;
 
-    // Multi-participants & anti-doublons
-    const SELF_UUID = (() => {
-      let u = localStorage.getItem('client_uuid');
-      if(!u){ u = (crypto.randomUUID ? crypto.randomUUID() : String(Math.random())); localStorage.setItem('client_uuid', u); }
-      return u;
-    })();
+ const SELF_UUID = (() => {
+  let u = sessionStorage.getItem('client_uuid');             // ← sessionStorage
+  if(!u){ u = crypto.randomUUID?.() || String(Math.random());
+          sessionStorage.setItem('client_uuid', u); }
+  return u;
+})();
 
     const mediaConns = new Map();    // peerId -> MediaConnection
     const dataConns  = new Map();    // peerId -> DataConnection
@@ -466,6 +466,13 @@ function watchVideoMetadata(videoEl){
         }
       }catch(e){ /* ignore */ }
     }
+function allKnownPeerIds(){
+  return Array.from(new Set([
+    ...mediaConns.keys(),
+    ...dataConns.keys(),
+    peer.id
+  ].filter(Boolean)));
+}
 
     // ==== Media acquisition ====
     let selfThumbVideo = null; // vidéo vignette "Moi"
@@ -877,10 +884,12 @@ function adaptQualityForPing(ms, mc){
       }
     });
 
-    function broadcastPeersList(){
-      const ids = Array.from(mediaConns.keys()).concat([peer.id]).filter(Boolean);
-      for (const [, dc] of dataConns){ if (dc.open) dc.send({type:'peers', ids}); }
-    }
+ function broadcastPeersList(){
+  const ids = allKnownPeerIds();
+  for (const [, dc] of dataConns){
+    if (dc.open) dc.send({type:'peers', ids});
+  }
+}
 
     function setupDataConn(dc){
       // Anti-doublon
@@ -888,19 +897,23 @@ function adaptQualityForPing(ms, mc){
       if (existing && existing.open) { try{ dc.close(); }catch{} return; }
 
       dataConns.set(dc.peer, dc);
-      dc.on('open', ()=>{
-        connStatus.textContent='Connecté'; setConn('ok'); ding.play().catch(()=>{});
-        dc.send({type:'hello', id: peer.id, uuid: SELF_UUID, label: isClient ? 'Client' : 'Technicien'});
-        broadcastPeersList();
+dc.on('open', ()=>{
+  connStatus.textContent='Connecté'; setConn('ok'); ding.play().catch(()=>{});
+  dc.send({type:'hello', id: peer.id, uuid: SELF_UUID, label: isClient ? 'Client' : 'Technicien'});
 
-        if (isClient){
-          btnJoin.style.display='none';
-          btnHang.style.display='inline-block';
-        }
-        if (!mediaConns.has(dc.peer)) {
-  callPeer(dc.peer);
-}
-      });
+  // ➜ Envoie la liste complète **au nouveau** immédiatement
+  dc.send({type:'peers', ids: allKnownPeerIds()});          //  ← AJOUT
+
+  broadcastPeersList();
+
+  if (isClient){
+    btnJoin.style.display='none';
+    btnHang.style.display='inline-block';
+  }
+
+  // ➜ Si pas encore de flux média entre nous, on l’initie
+  if (!mediaConns.has(dc.peer)) callPeer(dc.peer);          //  ← AJOUT
+});
       dc.on('close', ()=>{ removePeerCompletely(dc.peer); setConn('warn'); });
       dc.on('error', e=>toast('Erreur data: '+e,'error'));
       dc.on('data', payload=>{
