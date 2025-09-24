@@ -59,6 +59,27 @@ video{
   touch-action:none;
 }
 
+.video-area:fullscreen,
+.video-area:-webkit-full-screen{
+  width:100vw;
+  height:100vh;
+  aspect-ratio:auto;           /* ne fige plus le ratio en FS */
+  background:#000;
+}
+.video-area:fullscreen video,
+.video-area:-webkit-full-screen video{
+  width:100%;
+  height:100%;
+  object-fit:contain;          /* toute l'image visible */
+}
+.video-area:fullscreen .thumbs,
+.video-area:-webkit-full-screen .thumbs,
+.video-area:fullscreen .vid-badges,
+.video-area:-webkit-full-screen .vid-badges{
+  display:none;                /* rien ne masque la vidéo en FS */
+}
+
+
     .vid-badges{position:absolute;top:10px;left:10px;display:flex;gap:8px;z-index:3;} 
     .chip{display:inline-flex;align-items:center;gap:6px;padding:4px 8px;border-radius:999px;font-size:12px;border:1px solid var(--border);background:rgba(0,0,0,.35);} 
 
@@ -277,7 +298,22 @@ function updateAreaAspectFromVideo(videoEl){
   if (!w || !h){ return; }
 
   // Applique le ratio sur le conteneur principal
-  const area = document.getElementById('video-area');
+const area = document.getElementById('video-area');
+document.addEventListener('fullscreenchange', ()=>{
+  const entering = document.fullscreenElement === area;
+  if (entering){
+    // mémorise et neutralise le ratio dynamique
+    area.dataset.prevAspect = area.style.aspectRatio || '';
+    area.style.aspectRatio = 'auto';
+    // reset tout zoom éventuel
+    scale=1; panX=0; panY=0; mainV.style.transform='translate(0,0) scale(1)';
+  }else{
+    // restaure le ratio calculé par ton watcher
+    area.style.aspectRatio = area.dataset.prevAspect || '';
+    updateAreaAspectFromVideo(mainV);
+  }
+});
+
   area.style.aspectRatio = `${w} / ${h}`;
 }
 
